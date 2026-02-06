@@ -66,9 +66,17 @@ export async function GET(request: NextRequest) {
       }, { status: authCheck.status });
     }
 
+    const user = authCheck.user;
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
     // Find user's community by to_id = user_id
     const community = await prisma.community.findFirst({
-      where: { to_id: String(authCheck.user.user_id) },
+      where: { to_id: String(user.user_id) },
       select: {
         community_id: true,
         name: true,
@@ -115,6 +123,21 @@ export async function POST(request: NextRequest) {
         success: false,
         error: authCheck.error
       }, { status: authCheck.status });
+    }
+
+    const user = authCheck.user;
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
+    if (!authCheck.user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
     }
 
     const formData = await request.formData();
@@ -239,9 +262,24 @@ export async function PUT(request: NextRequest) {
       }, { status: 400 });
     }
 
+    const user = authCheck.user;
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
+    if (!authCheck.user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+    
     // Find user's community by to_id = user_id
     const existingCommunity = await prisma.community.findFirst({
-      where: { to_id: String(authCheck.user.user_id) },
+      where: { to_id: String(user.user_id) },
       select: { community_id: true, logo: true, cover: true }
     });
 
@@ -275,11 +313,11 @@ export async function PUT(request: NextRequest) {
     let coverUrl = existingCommunity.cover; // Keep existing cover if no new file
 
     if (logoFile && logoFile.size > 0) {
-      logoUrl = await saveUploadedFile(logoFile, 'logo', authCheck.user.user_id);
+      logoUrl = await saveUploadedFile(logoFile, 'logo', user.user_id);
     }
 
     if (coverFile && coverFile.size > 0) {
-      coverUrl = await saveUploadedFile(coverFile, 'cover', authCheck.user.user_id);
+      coverUrl = await saveUploadedFile(coverFile, 'cover', user.user_id);
     }
 
     // Update community

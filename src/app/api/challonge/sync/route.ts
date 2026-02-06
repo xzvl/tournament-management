@@ -255,14 +255,25 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
+    if (!user.challonge_username) {
+      return NextResponse.json({
+        success: false,
+        error: 'User does not have a Challonge username configured'
+      }, { status: 400 });
+    }
+
     const { challonge_username, api_key } = user;
 
     try {
       let result;
 
-      if (isUpdate && oldChallongeId) {
+      const oldChallongeIdValue = typeof oldChallongeId === 'string'
+        ? oldChallongeId.trim()
+        : '';
+
+      if (isUpdate && oldChallongeIdValue) {
         // Update existing tournament on Challonge using the old challonge_id
-        result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, oldChallongeId);
+        result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, oldChallongeIdValue);
       } else if (isUpdate && tournament.challonge_id) {
         // Fallback: If no oldChallongeId but it's an update, use current challonge_id
         result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, tournament.challonge_id);

@@ -313,11 +313,19 @@ export async function DELETE(request: NextRequest) {
       }, { status: 400 });
     }
 
+    const chIdValue = Number(ch_id);
+    if (!Number.isInteger(chIdValue)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Tournament ID must be a valid number'
+      }, { status: 400 });
+    }
+
     // Check if tournament exists and user has permission
     const existing = await prisma.challongeTournament.findFirst({
       where: user.role === 'admin'
-        ? { ch_id }
-        : { ch_id, to_id: user.user_id }
+        ? { ch_id: chIdValue }
+        : { ch_id: chIdValue, to_id: user.user_id }
     });
 
     if (!existing) {
@@ -329,7 +337,7 @@ export async function DELETE(request: NextRequest) {
 
     // Delete tournament
     await prisma.challongeTournament.delete({
-      where: { ch_id }
+      where: { ch_id: chIdValue }
     });
 
     return NextResponse.json({

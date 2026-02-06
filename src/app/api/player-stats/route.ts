@@ -114,8 +114,7 @@ export async function POST(request: NextRequest) {
               username,
               password,
               name,
-              player_name: playerName,
-              community_ids: null
+              player_name: playerName
             },
             select: { player_id: true }
           });

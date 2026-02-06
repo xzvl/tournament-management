@@ -97,6 +97,14 @@ export async function PUT(
       }, { status: authCheck.status });
     }
 
+    const user = authCheck.user;
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
     const { userId } = await context.params;
     const parsedUserId = parseInt(userId);
     if (isNaN(parsedUserId)) {
@@ -224,8 +232,16 @@ export async function DELETE(
       }, { status: 400 });
     }
 
+    const user = authCheck.user;
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
     // Prevent admin from deleting themselves
-    if (parsedUserId === authCheck.user.user_id) {
+    if (parsedUserId === user.user_id) {
       return NextResponse.json({
         success: false,
         error: 'Cannot delete your own account'

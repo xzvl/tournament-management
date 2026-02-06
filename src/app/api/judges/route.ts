@@ -143,6 +143,12 @@ export async function POST(request: NextRequest) {
         error: authCheck.error
       }, { status: authCheck.status });
     }
+    const communityNames = await prisma.community.findMany({
+      select: { community_id: true, name: true }
+    });
+    const communityNameMap = new Map(
+      communityNames.map((community) => [community.community_id, community.name])
+    );
 
     if (!authCheck.user) {
       return NextResponse.json({
@@ -308,6 +314,13 @@ export async function PUT(request: NextRequest) {
         error: 'Judge not found or access denied'
       }, { status: 404 });
     }
+    
+    const communityNames = await prisma.community.findMany({
+      select: { community_id: true, name: true }
+    });
+    const communityNameMap = new Map(
+      communityNames.map((community) => [community.community_id, community.name])
+    );
 
     // Check if username already exists for other judges
     const duplicateUsername = await prisma.judge.findFirst({

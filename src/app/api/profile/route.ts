@@ -44,6 +44,13 @@ export async function GET(request: NextRequest) {
       }, { status: authCheck.status });
     }
 
+    if (!authCheck.user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
+    }
+
     const user = await prisma.user.findUnique({
       where: { user_id: authCheck.user.user_id },
       select: {
@@ -89,6 +96,13 @@ export async function PUT(request: NextRequest) {
         success: false,
         error: authCheck.error
       }, { status: authCheck.status });
+    }
+
+    if (!authCheck.user) {
+      return NextResponse.json({
+        success: false,
+        error: 'Authentication required'
+      }, { status: 401 });
     }
 
     const body = await request.json();

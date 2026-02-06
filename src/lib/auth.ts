@@ -71,7 +71,7 @@ export async function verifyAuth(request: NextRequest): Promise<AuthResult> {
         username: user.username,
         email: user.email,
         role: user.user_role,
-        community_id: community?.community_id ?? null
+        community_id: community?.community_id || 0
       }
     };
 
