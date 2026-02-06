@@ -2,11 +2,11 @@ import mysql from 'mysql2/promise';
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || 'sql113.infinityfree.com',
   port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'beybladex_tournament',
+  user: process.env.DB_USER || 'if0_40416541_shop',
+  password: process.env.DB_PASSWORD || 'Hj5z07rrW4W8iC',
+  database: process.env.DB_NAME || 'if0_40416541',
   waitForConnections: true,
   connectionLimit: 5,
   queueLimit: 0,
