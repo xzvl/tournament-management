@@ -2,11 +2,11 @@ import mysql from 'mysql2/promise';
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'sql113.infinityfree.com',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  user: process.env.DB_USER || 'if0_40416541_shop',
-  password: process.env.DB_PASSWORD || 'Hj5z07rrW4W8iC',
-  database: process.env.DB_NAME || 'if0_40416541',
+  host: process.env.DB_HOST || 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
+  port: parseInt(process.env.DB_PORT || '4000'),
+  user: process.env.DB_USER || 'mxAc81EPU7iJkLe.root',
+  password: process.env.DB_PASSWORD || '5wMOb33Phw83SkcS',
+  database: process.env.DB_NAME || 'test',
   waitForConnections: true,
   connectionLimit: 5,
   queueLimit: 0,
