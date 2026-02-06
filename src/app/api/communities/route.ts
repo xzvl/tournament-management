@@ -1,27 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
   try {
     // Get all communities
-    const query = `
-      SELECT 
-        c.community_id, 
-        c.name, 
-        c.short_name, 
-        c.location, 
-        c.city, 
-        c.province, 
-        c.logo,
-        c.cover,
-        c.to_id,
-        c.created_at
-      FROM communities c
-      ORDER BY c.name ASC
-    `;
-    
-    const communities = await executeQuery(query, []) as any[];
+    const communities = await prisma.community.findMany({
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        logo: true,
+        cover: true,
+        to_id: true,
+        created_at: true
+      },
+      orderBy: { name: 'asc' }
+    });
 
     return NextResponse.json({
       success: true,
@@ -67,42 +65,43 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if short_name already exists
-    const existingCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE short_name = ?',
-      [short_name]
-    ) as any[];
+    const existingCommunity = await prisma.community.findFirst({
+      where: { short_name },
+      select: { community_id: true }
+    });
 
-    if (existingCommunity.length > 0) {
+    if (existingCommunity) {
       return NextResponse.json({
         success: false,
         error: 'Short name already exists'
       }, { status: 400 });
     }
 
-    // Insert new community
-    const insertQuery = `
-      INSERT INTO communities (name, short_name, location, city, province, to_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    const result = await executeQuery(insertQuery, [
-      name,
-      short_name,
-      location || null,
-      city || null,
-      province || null,
-      to_id || null
-    ]) as any;
-
-    // Get the created community
-    const newCommunity = await executeQuery(
-      'SELECT community_id, name, short_name, location, city, province, to_id, created_at, updated_at FROM communities WHERE community_id = ?',
-      [result.insertId]
-    ) as any[];
+    const newCommunity = await prisma.community.create({
+      data: {
+        name,
+        short_name,
+        location: location || null,
+        city: city || null,
+        province: province || null,
+        to_id: to_id || null
+      },
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        to_id: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      community: newCommunity[0],
+      community: newCommunity,
       message: 'Community created successfully'
     });
 
@@ -145,12 +144,12 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if community exists
-    const existingCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE community_id = ?',
-      [community_id]
-    ) as any[];
+    const existingCommunity = await prisma.community.findUnique({
+      where: { community_id },
+      select: { community_id: true }
+    });
 
-    if (existingCommunity.length === 0) {
+    if (!existingCommunity) {
       return NextResponse.json({
         success: false,
         error: 'Community not found'
@@ -158,12 +157,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if short_name already exists for other communities
-    const duplicateCheck = await executeQuery(
-      'SELECT community_id FROM communities WHERE short_name = ? AND community_id != ?',
-      [short_name, community_id]
-    ) as any[];
+    const duplicateCheck = await prisma.community.findFirst({
+      where: {
+        short_name,
+        community_id: { not: community_id }
+      },
+      select: { community_id: true }
+    });
 
-    if (duplicateCheck.length > 0) {
+    if (duplicateCheck) {
       return NextResponse.json({
         success: false,
         error: 'Short name already exists'
@@ -171,31 +173,32 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update community
-    const updateQuery = `
-      UPDATE communities 
-      SET name = ?, short_name = ?, location = ?, city = ?, province = ?, to_id = ?, updated_at = NOW()
-      WHERE community_id = ?
-    `;
-    
-    await executeQuery(updateQuery, [
-      name,
-      short_name,
-      location || null,
-      city || null,
-      province || null,
-      to_id || null,
-      community_id
-    ]);
-
-    // Get the updated community
-    const updatedCommunity = await executeQuery(
-      'SELECT community_id, name, short_name, location, city, province, to_id, created_at, updated_at FROM communities WHERE community_id = ?',
-      [community_id]
-    ) as any[];
+    const updatedCommunity = await prisma.community.update({
+      where: { community_id },
+      data: {
+        name,
+        short_name,
+        location: location || null,
+        city: city || null,
+        province: province || null,
+        to_id: to_id || null
+      },
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        to_id: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      community: updatedCommunity[0],
+      community: updatedCommunity,
       message: 'Community updated successfully'
     });
 
@@ -228,22 +231,31 @@ export async function DELETE(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const community_id = searchParams.get('community_id');
+    const communityIdParam = searchParams.get('community_id');
 
-    if (!community_id) {
+    if (!communityIdParam) {
       return NextResponse.json({
         success: false,
         error: 'Community ID is required'
       }, { status: 400 });
     }
 
-    // Check if community exists
-    const existingCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE community_id = ?',
-      [community_id]
-    ) as any[];
+    const community_id = Number(communityIdParam);
 
-    if (existingCommunity.length === 0) {
+    if (!Number.isFinite(community_id)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Community ID must be a number'
+      }, { status: 400 });
+    }
+
+    // Check if community exists
+    const existingCommunity = await prisma.community.findUnique({
+      where: { community_id },
+      select: { community_id: true }
+    });
+
+    if (!existingCommunity) {
       return NextResponse.json({
         success: false,
         error: 'Community not found'
@@ -251,10 +263,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if community has associated judges
-    const associatedJudges = await executeQuery(
-      'SELECT judge_id FROM judges WHERE JSON_CONTAINS(community_ids, ?)',
-      [community_id]
-    ) as any[];
+    const associatedJudges = await prisma.$queryRaw<
+      Array<{ judge_id: number }>
+    >`SELECT judge_id FROM judges WHERE community_ids @> ${JSON.stringify([community_id])}::jsonb`;
 
     if (associatedJudges.length > 0) {
       return NextResponse.json({
@@ -264,10 +275,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete the community
-    await executeQuery(
-      'DELETE FROM communities WHERE community_id = ?',
-      [community_id]
-    );
+    await prisma.community.delete({
+      where: { community_id }
+    });
 
     return NextResponse.json({
       success: true,

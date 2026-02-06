@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,23 +19,27 @@ export async function GET(request: NextRequest) {
     try {
       const decoded = jwt.verify(token, jwtSecret) as any;
       
-      // Verify user still exists in database and get community info
-      const query = `
-        SELECT u.user_id, u.username, u.name, u.user_role, c.community_id 
-        FROM users u
-        LEFT JOIN communities c ON u.user_id = c.to_id
-        WHERE u.user_id = ?
-      `;
-      const users = await executeQuery(query, [decoded.userId]) as any[];
+      const user = await prisma.user.findUnique({
+        where: { user_id: decoded.userId },
+        select: {
+          user_id: true,
+          username: true,
+          name: true,
+          user_role: true
+        }
+      });
 
-      if (users.length === 0) {
+      if (!user) {
         return NextResponse.json({
           success: false,
           error: 'User not found'
         }, { status: 401 });
       }
 
-      const user = users[0];
+      const community = await prisma.community.findFirst({
+        where: { to_id: String(user.user_id) },
+        select: { community_id: true }
+      });
 
       return NextResponse.json({
         success: true,
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
           name: user.name,
           role: user.user_role,
           user_role: user.user_role,
-          community_id: user.community_id
+          community_id: community?.community_id ?? null
         }
       });
 

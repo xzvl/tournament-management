@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
-    const players = await executeQuery(
-      'SELECT player_id, player_name, name FROM players ORDER BY player_name ASC'
-    ) as Array<{ player_id: number; player_name: string; name: string }>;
+    const players = await prisma.player.findMany({
+      select: {
+        player_id: true,
+        player_name: true,
+        name: true
+      },
+      orderBy: { player_name: 'asc' }
+    });
 
     return NextResponse.json({ success: true, players });
   } catch (error) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import prisma from '@/lib/prisma';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -18,14 +18,16 @@ async function verifyAuth(request: NextRequest) {
     const decoded = jwt.verify(token, jwtSecret) as any;
     
     // Verify user exists
-    const query = 'SELECT user_id, username, user_role FROM users WHERE user_id = ?';
-    const users = await executeQuery(query, [decoded.userId]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id: decoded.userId },
+      select: { user_id: true, username: true, user_role: true }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return { error: 'User not found', status: 401 };
     }
 
-    return { user: users[0] };
+    return { user };
   } catch (error) {
     return { error: 'Invalid token', status: 401 };
   }
@@ -42,16 +44,22 @@ export async function GET(request: NextRequest) {
       }, { status: authCheck.status });
     }
 
-    const query = `
-      SELECT user_id, username, email, name, player_name, 
-             challonge_username, api_key, user_role, created_at
-      FROM users 
-      WHERE user_id = ?
-    `;
-    
-    const users = await executeQuery(query, [authCheck.user.user_id]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id: authCheck.user.user_id },
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        name: true,
+        player_name: true,
+        challonge_username: true,
+        api_key: true,
+        user_role: true,
+        created_at: true
+      }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return NextResponse.json({
         success: false,
         error: 'User not found'
@@ -60,7 +68,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      user: users[0]
+      user
     });
 
   } catch (error) {
@@ -104,10 +112,12 @@ export async function PUT(request: NextRequest) {
       }
 
       // Get current password hash
-      const passwordQuery = 'SELECT password FROM users WHERE user_id = ?';
-      const passwordResult = await executeQuery(passwordQuery, [authCheck.user.user_id]) as any[];
-      
-      if (passwordResult.length === 0) {
+      const passwordResult = await prisma.user.findUnique({
+        where: { user_id: authCheck.user.user_id },
+        select: { password: true }
+      });
+
+      if (!passwordResult) {
         return NextResponse.json({
           success: false,
           error: 'User not found'
@@ -115,7 +125,7 @@ export async function PUT(request: NextRequest) {
       }
 
       // Verify current password
-      const isValidPassword = await bcrypt.compare(current_password, passwordResult[0].password);
+      const isValidPassword = await bcrypt.compare(current_password, passwordResult.password);
       
       if (!isValidPassword) {
         return NextResponse.json({
@@ -128,55 +138,51 @@ export async function PUT(request: NextRequest) {
       const hashedNewPassword = await bcrypt.hash(new_password, 12);
 
       // Update user with new password
-      const updateQuery = `
-        UPDATE users 
-        SET name = ?, player_name = ?, challonge_username = ?, 
-            api_key = ?, email = ?, password = ?, updated_at = NOW()
-        WHERE user_id = ?
-      `;
-      
-      await executeQuery(updateQuery, [
-        name || null,
-        player_name || null,
-        challonge_username || null,
-        api_key || null,
-        email || null,
-        hashedNewPassword,
-        authCheck.user.user_id
-      ]);
+      await prisma.user.update({
+        where: { user_id: authCheck.user.user_id },
+        data: {
+          name: name || null,
+          player_name: player_name || null,
+          challonge_username: challonge_username || null,
+          api_key: api_key || null,
+          email: email || null,
+          password: hashedNewPassword
+        }
+      });
 
     } else {
       // Update user without changing password
-      const updateQuery = `
-        UPDATE users 
-        SET name = ?, player_name = ?, challonge_username = ?, 
-            api_key = ?, email = ?, updated_at = NOW()
-        WHERE user_id = ?
-      `;
-      
-      await executeQuery(updateQuery, [
-        name || null,
-        player_name || null,
-        challonge_username || null,
-        api_key || null,
-        email || null,
-        authCheck.user.user_id
-      ]);
+      await prisma.user.update({
+        where: { user_id: authCheck.user.user_id },
+        data: {
+          name: name || null,
+          player_name: player_name || null,
+          challonge_username: challonge_username || null,
+          api_key: api_key || null,
+          email: email || null
+        }
+      });
     }
 
     // Get updated user data
-    const updatedUserQuery = `
-      SELECT user_id, username, email, name, player_name, 
-             challonge_username, api_key, user_role, created_at
-      FROM users 
-      WHERE user_id = ?
-    `;
-    
-    const updatedUsers = await executeQuery(updatedUserQuery, [authCheck.user.user_id]) as any[];
+    const updatedUser = await prisma.user.findUnique({
+      where: { user_id: authCheck.user.user_id },
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        name: true,
+        player_name: true,
+        challonge_username: true,
+        api_key: true,
+        user_role: true,
+        created_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      user: updatedUsers[0],
+      user: updatedUser,
       message: new_password ? 'Profile and password updated successfully' : 'Profile updated successfully'
     });
 

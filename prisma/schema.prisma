@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  tournament_organizer
+}
+
+model User {
+  user_id            Int                  @id @default(autoincrement())
+  username           String               @unique
+  email              String               @unique
+  password           String
+  name               String
+  player_name        String?
+  challonge_username String?
+  api_key            String?
+  user_role          UserRole             @default(tournament_organizer)
+  created_at         DateTime             @default(now())
+  updated_at         DateTime             @updatedAt
+
+  tournaments        ChallongeTournament[] @relation("UserTournaments")
+
+  @@map("users")
+}
+
+model Community {
+  community_id Int      @id @default(autoincrement())
+  name         String
+  short_name   String
+  logo         String?
+  cover        String?
+  location     String?
+  province     String?
+  city         String?
+  to_id        String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  @@index([short_name])
+  @@map("communities")
+}
+
+model Player {
+  player_id     Int      @id @default(autoincrement())
+  username      String   @unique
+  password      String
+  name          String
+  player_name   String
+  community_ids Json?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  stats         PlayerStat[]
+
+  @@index([player_name])
+  @@map("players")
+}
+
+model Judge {
+  judge_id      Int      @id @default(autoincrement())
+  username      String   @unique
+  password      String
+  qr_code       String?
+  judge_name    String?
+  name          String?
+  community_ids Json?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  @@map("judges")
+}
+
+model ChallongeTournament {
+  ch_id                 Int      @id @default(autoincrement())
+  challonge_id          String   @unique
+  challonge_url         String
+  challonge_name        String
+  challonge_cover       String?
+  description           String?
+  tournament_date       DateTime
+  active                Boolean  @default(true)
+  total_stadium         Int      @default(1)
+  assigned_judge_ids    Json?
+  pre_registered_players Json?
+  to_id                 Int?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  organizer             User?    @relation("UserTournaments", fields: [to_id], references: [user_id], onDelete: SetNull)
+
+  @@index([tournament_date])
+  @@index([to_id])
+  @@map("challonge_tournaments")
+}
+
+model PlayerStat {
+  stat_id      Int      @id @default(autoincrement())
+  challonge_id String
+  player_id    Int
+  match_id     String
+  spin         Int      @default(0)
+  burst        Int      @default(0)
+  over         Int      @default(0)
+  extreme      Int      @default(0)
+  penalty      Int      @default(0)
+  match_result String
+  stadium_side String
+  match_status String
+  match_stage  String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  player       Player   @relation(fields: [player_id], references: [player_id], onDelete: Cascade)
+
+  @@index([challonge_id, match_id])
+  @@index([player_id, challonge_id])
+  @@map("player_stats")
+}

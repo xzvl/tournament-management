@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
 import jwt from 'jsonwebtoken';
+import { UserRole } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
 // Middleware to verify admin access
 async function verifyAdminAccess(request: NextRequest) {
@@ -17,14 +18,19 @@ async function verifyAdminAccess(request: NextRequest) {
     const decoded = jwt.verify(token, jwtSecret) as any;
     
     // Verify user is admin
-    const query = 'SELECT user_id, username, user_role FROM users WHERE user_id = ? AND user_role = "admin"';
-    const users = await executeQuery(query, [decoded.userId]) as any[];
+    const admin = await prisma.user.findFirst({
+      where: {
+        user_id: decoded.userId,
+        user_role: 'admin'
+      },
+      select: { user_id: true, username: true, user_role: true }
+    });
 
-    if (users.length === 0) {
+    if (!admin) {
       return { error: 'Admin access required', status: 403 };
     }
 
-    return { user: users[0] };
+    return { user: admin };
   } catch (error) {
     return { error: 'Invalid token', status: 401 };
   }
@@ -45,10 +51,19 @@ export async function GET(
       }, { status: 400 });
     }
 
-    const query = 'SELECT user_id, username, name, email, api_key, challonge_username FROM users WHERE user_id = ?';
-    const users = await executeQuery(query, [parsedUserId]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id: parsedUserId },
+      select: {
+        user_id: true,
+        username: true,
+        name: true,
+        email: true,
+        api_key: true,
+        challonge_username: true
+      }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return NextResponse.json({
         success: false,
         error: 'User not found'
@@ -57,7 +72,7 @@ export async function GET(
 
     return NextResponse.json({
       success: true,
-      user: users[0]
+      user
     });
   } catch (error) {
     console.error('Get user error:', error);
@@ -102,12 +117,12 @@ export async function PUT(
     }
 
     // Check if user exists
-    const userExists = await executeQuery(
-      'SELECT user_id FROM users WHERE user_id = ?',
-      [parsedUserId]
-    ) as any[];
-    
-    if (userExists.length === 0) {
+    const userExists = await prisma.user.findUnique({
+      where: { user_id: parsedUserId },
+      select: { user_id: true }
+    });
+
+    if (!userExists) {
       return NextResponse.json({
         success: false,
         error: 'User not found'
@@ -115,53 +130,65 @@ export async function PUT(
     }
 
     // Check if username or email exists for other users
-    const existingUser = await executeQuery(
-      'SELECT user_id FROM users WHERE (username = ? OR email = ?) AND user_id != ?',
-      [username, email, parsedUserId]
-    ) as any[];
-    
-    if (existingUser.length > 0) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        AND: [
+          { user_id: { not: parsedUserId } },
+          { OR: [{ username }, { email }] }
+        ]
+      },
+      select: { user_id: true }
+    });
+
+    if (existingUser) {
       return NextResponse.json({
         success: false,
         error: 'Username or email already exists'
       }, { status: 400 });
     }
 
-    // Build update query
-    let updateQuery = `
-      UPDATE users 
-      SET username = ?, email = ?, name = ?, player_name = ?, challonge_username = ?, api_key = ?, user_role = ?
-    `;
-    let updateParams = [
-      username, 
+    const updateData: {
+      username: string;
+      email: string;
+      name: string;
+      player_name: string | null;
+      challonge_username: string | null;
+      api_key: string | null;
+      user_role: UserRole;
+      password?: string;
+    } = {
+      username,
       email,
-      name, 
-      player_name || null, 
-      challonge_username || null, 
-      api_key || null, 
-      user_role
-    ];
+      name,
+      player_name: player_name || null,
+      challonge_username: challonge_username || null,
+      api_key: api_key || null,
+      user_role: user_role as UserRole
+    };
 
-    // Add password to update if provided
     if (password && password.trim() !== '') {
-      updateQuery += ', password = ?';
-      updateParams.push(password); // In production, use: await bcrypt.hash(password, 10)
+      updateData.password = password;
     }
 
-    updateQuery += ' WHERE user_id = ?';
-    updateParams.push(parsedUserId);
-
-    await executeQuery(updateQuery, updateParams);
-
-    // Get the updated user
-    const updatedUser = await executeQuery(
-      'SELECT user_id, username, email, name, player_name, challonge_username, api_key, user_role, created_at FROM users WHERE user_id = ?',
-      [parsedUserId]
-    ) as any[];
+    const updatedUser = await prisma.user.update({
+      where: { user_id: parsedUserId },
+      data: updateData,
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        name: true,
+        player_name: true,
+        challonge_username: true,
+        api_key: true,
+        user_role: true,
+        created_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      user: updatedUser[0],
+      user: updatedUser,
       message: 'User updated successfully'
     });
 
@@ -206,9 +233,12 @@ export async function DELETE(
     }
 
     // Check if user exists
-    const existingUser = await executeQuery('SELECT user_id FROM users WHERE user_id = ?', [parsedUserId]) as any[];
-    
-    if (existingUser.length === 0) {
+    const existingUser = await prisma.user.findUnique({
+      where: { user_id: parsedUserId },
+      select: { user_id: true }
+    });
+
+    if (!existingUser) {
       return NextResponse.json({
         success: false,
         error: 'User not found'
@@ -216,7 +246,7 @@ export async function DELETE(
     }
 
     // Delete user
-    await executeQuery('DELETE FROM users WHERE user_id = ?', [parsedUserId]);
+    await prisma.user.delete({ where: { user_id: parsedUserId } });
 
     return NextResponse.json({
       success: true,

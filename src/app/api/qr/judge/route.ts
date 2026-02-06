@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 import jwt from 'jsonwebtoken';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 type JudgePayload = {
   judge_id?: number;
@@ -26,19 +26,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const judges = await executeQuery(
-      'SELECT judge_id, username, password FROM judges WHERE judge_id = ? AND username = ?',
-      [judgeId, username]
-    ) as Array<{ judge_id: number; username: string; password: string }>;
+    const judge = await prisma.judge.findFirst({
+      where: { judge_id: judgeId, username },
+      select: { judge_id: true, username: true, password: true }
+    });
 
-    if (judges.length === 0) {
+    if (!judge) {
       return NextResponse.json(
         { success: false, error: 'Judge not found.' },
         { status: 404 }
       );
     }
-
-    const judge = judges[0];
     const jwtSecret = process.env.JWT_SECRET || 'your-secret-key-change-this';
     const token = jwt.sign(
       {

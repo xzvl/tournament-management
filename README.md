@@ -35,7 +35,15 @@ A modern Next.js application for managing Beyblade tournaments with Challonge in
 npm install
 ```
 
-2. Run the development server:
+2. Configure Postgres and Prisma:
+```bash
+npm run prisma:generate
+npm run prisma:migrate
+```
+
+Set your `DATABASE_URL` in `.env` (see `.env.example`).
+
+3. Run the development server:
 ```bash
 npm run dev
 ```
@@ -57,6 +65,10 @@ npm run dev
    - Track match history
 
 ## Configuration
+
+### Database
+
+This project uses Prisma + PostgreSQL. Use `.env.example` for the required environment variables.
 
 ### Judge Passwords
 

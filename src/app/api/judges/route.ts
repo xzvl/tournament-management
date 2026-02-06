@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
 import jwt from 'jsonwebtoken';
+import prisma from '@/lib/prisma';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -17,30 +17,32 @@ async function verifyAuth(request: NextRequest) {
     const decoded = jwt.verify(token, jwtSecret) as any;
     
     // Verify user exists and get their community
-    const userQuery = `
-      SELECT u.user_id, u.username, u.user_role, c.community_id 
-      FROM users u 
-      LEFT JOIN communities c ON u.user_id = c.to_id 
-      WHERE u.user_id = ?
-    `;
-    const users = await executeQuery(userQuery, [decoded.userId]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id: decoded.userId },
+      select: { user_id: true, username: true, user_role: true }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return { error: 'User not found', status: 401 };
     }
 
+    const community = await prisma.community.findFirst({
+      where: { to_id: String(user.user_id) },
+      select: { community_id: true }
+    });
+
     // For admin users, we don't require a community
-    if (users[0].user_role !== 'admin' && !users[0].community_id) {
+    if (user.user_role !== 'admin' && !community?.community_id) {
       return { error: 'No community found. Please create a community first.', status: 400 };
     }
 
     return { 
       user: {
-        user_id: users[0].user_id,
-        username: users[0].username,
-        role: users[0].user_role, // Map user_role to role for consistency
-        user_role: users[0].user_role,
-        community_id: users[0].community_id
+        user_id: user.user_id,
+        username: user.username,
+        role: user.user_role, // Map user_role to role for consistency
+        user_role: user.user_role,
+        community_id: community?.community_id ?? null
       }
     };
   } catch (error) {
@@ -69,47 +71,53 @@ export async function GET(request: NextRequest) {
     const user = authCheck.user;
 
     // Admin can see all judges, others see only their community's judges
-    let query = '';
-    let queryParams: Array<string | number> = [];
-    
-    if (user.role === 'admin') {
-      // Admin sees ALL judges regardless of community relationships
-      query = `
-        SELECT 
-          j.judge_id, 
-          j.username, 
-          j.judge_name, 
-          j.community_ids,
-          GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR ', ') as community_names,
-          j.created_at, 
-          j.updated_at
-        FROM judges j
-        LEFT JOIN communities c ON JSON_CONTAINS(j.community_ids, c.community_id)
-        GROUP BY j.judge_id, j.username, j.judge_name, j.community_ids, j.created_at, j.updated_at
-        ORDER BY j.created_at DESC
-      `;
-      queryParams = [];
-    } else {
-      // Non-admin users only see judges from their community
-      query = `
-        SELECT 
-          j.judge_id, 
-          j.username, 
-          j.judge_name, 
-          j.community_ids,
-          GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR ', ') as community_names,
-          j.created_at, 
-          j.updated_at
-        FROM judges j
-        LEFT JOIN communities c ON JSON_CONTAINS(j.community_ids, c.community_id)
-        WHERE JSON_CONTAINS(j.community_ids, ?)
-        GROUP BY j.judge_id, j.username, j.judge_name, j.community_ids, j.created_at, j.updated_at
-        ORDER BY j.created_at DESC
-      `;
-      queryParams = [user.community_id];
-    }
-    
-    const judges = await executeQuery(query, queryParams) as any[];
+    const judgeRows = user.role === 'admin'
+      ? await prisma.judge.findMany({
+          select: {
+            judge_id: true,
+            username: true,
+            judge_name: true,
+            community_ids: true,
+            created_at: true,
+            updated_at: true
+          },
+          orderBy: { created_at: 'desc' }
+        })
+      : await prisma.judge.findMany({
+          where: {
+            community_ids: {
+              array_contains: [user.community_id]
+            }
+          },
+          select: {
+            judge_id: true,
+            username: true,
+            judge_name: true,
+            community_ids: true,
+            created_at: true,
+            updated_at: true
+          },
+          orderBy: { created_at: 'desc' }
+        });
+
+    const communityNames = await prisma.community.findMany({
+      select: { community_id: true, name: true }
+    });
+    const communityNameMap = new Map(
+      communityNames.map((community) => [community.community_id, community.name])
+    );
+
+    const judges = judgeRows.map((judge) => {
+      const communityIds = Array.isArray(judge.community_ids) ? judge.community_ids : [];
+      const names = communityIds
+        .map((id) => communityNameMap.get(id as number))
+        .filter(Boolean);
+
+      return {
+        ...judge,
+        community_names: names.join(', ')
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -176,51 +184,49 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if username already exists
-    const existingJudge = await executeQuery(
-      'SELECT judge_id FROM judges WHERE username = ?',
-      [username]
-    ) as any[];
-    
-    if (existingJudge.length > 0) {
+    const existingJudge = await prisma.judge.findFirst({
+      where: { username },
+      select: { judge_id: true }
+    });
+
+    if (existingJudge) {
       return NextResponse.json({
         success: false,
         error: 'A judge with this username already exists'
       }, { status: 400 });
     }
 
-    // Insert new judge
-    const insertQuery = `
-      INSERT INTO judges (username, password, judge_name, community_ids)
-      VALUES (?, ?, ?, ?)
-    `;
-    
-    const result = await executeQuery(insertQuery, [
-      username,
-      password,
-      judge_name || null,
-      assignedCommunities
-    ]) as any;
+    const createdJudge = await prisma.judge.create({
+      data: {
+        username,
+        password,
+        judge_name: judge_name || null,
+        community_ids: JSON.parse(assignedCommunities)
+      },
+      select: {
+        judge_id: true,
+        username: true,
+        judge_name: true,
+        community_ids: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
 
-    // Get the created judge with community names
-    const newJudgeQuery = `
-      SELECT 
-        j.judge_id, 
-        j.username, 
-        j.judge_name, 
-        j.community_ids,
-        GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR ', ') as community_names,
-        j.created_at, 
-        j.updated_at
-      FROM judges j
-      LEFT JOIN communities c ON JSON_CONTAINS(j.community_ids, c.community_id)
-      WHERE j.judge_id = ?
-      GROUP BY j.judge_id, j.username, j.judge_name, j.community_ids, j.created_at, j.updated_at
-    `;
-    const newJudge = await executeQuery(newJudgeQuery, [result.insertId]) as any[];
+    const names = Array.isArray(createdJudge.community_ids)
+      ? createdJudge.community_ids
+          .map((id) => communityNameMap.get(id as number))
+          .filter(Boolean)
+      : [];
+
+    const newJudge = {
+      ...createdJudge,
+      community_names: names.join(', ')
+    };
 
     return NextResponse.json({
       success: true,
-      judge: newJudge[0],
+      judge: newJudge,
       message: 'Judge created successfully'
     });
 
@@ -280,22 +286,23 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if judge exists and user has access
-    let existingJudge;
-    if (user.role === 'admin') {
-      // Admin can access any judge
-      existingJudge = await executeQuery(
-        'SELECT judge_id FROM judges WHERE judge_id = ?',
-        [judge_id]
-      ) as any[];
-    } else {
-      // Non-admin users can only access judges from their community
-      existingJudge = await executeQuery(
-        'SELECT judge_id FROM judges WHERE judge_id = ? AND JSON_CONTAINS(community_ids, ?)',
-        [judge_id, user.community_id]
-      ) as any[];
-    }
+    const judgeIdNumber = Number(judge_id);
+    const hasAccess = user.role === 'admin'
+      ? await prisma.judge.findUnique({
+          where: { judge_id: judgeIdNumber },
+          select: { judge_id: true }
+        })
+      : await prisma.judge.findFirst({
+          where: {
+            judge_id: judgeIdNumber,
+            community_ids: {
+              array_contains: [user.community_id]
+            }
+          },
+          select: { judge_id: true }
+        });
 
-    if (existingJudge.length === 0) {
+    if (!hasAccess) {
       return NextResponse.json({
         success: false,
         error: 'Judge not found or access denied'
@@ -303,63 +310,64 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if username already exists for other judges
-    const duplicateUsername = await executeQuery(
-      'SELECT judge_id FROM judges WHERE username = ? AND judge_id != ?',
-      [username, judge_id]
-    ) as any[];
-    
-    if (duplicateUsername.length > 0) {
+    const duplicateUsername = await prisma.judge.findFirst({
+      where: {
+        username,
+        judge_id: { not: judgeIdNumber }
+      },
+      select: { judge_id: true }
+    });
+
+    if (duplicateUsername) {
       return NextResponse.json({
         success: false,
         error: 'A judge with this username already exists'
       }, { status: 400 });
     }
 
-    // Prepare update query
-    let updateQuery;
-    let updateParams;
-    
+    const updateData: {
+      username: string;
+      judge_name: string | null;
+      community_ids?: number[];
+      password?: string;
+    } = {
+      username,
+      judge_name: judge_name || null
+    };
+
     if (user.role === 'admin' && assignedCommunities) {
-      updateQuery = 'UPDATE judges SET username = ?, judge_name = ?, community_ids = ?, updated_at = NOW() WHERE judge_id = ?';
-      updateParams = [username, judge_name || null, assignedCommunities, judge_id];
-    } else {
-      updateQuery = 'UPDATE judges SET username = ?, judge_name = ?, updated_at = NOW() WHERE judge_id = ?';
-      updateParams = [username, judge_name || null, judge_id];
+      updateData.community_ids = JSON.parse(assignedCommunities);
     }
 
-    // If password is provided, include in update
     if (password) {
-      if (user.role === 'admin' && assignedCommunities) {
-        updateQuery = 'UPDATE judges SET username = ?, judge_name = ?, community_ids = ?, password = ?, updated_at = NOW() WHERE judge_id = ?';
-        updateParams = [username, judge_name || null, assignedCommunities, password, judge_id];
-      } else {
-        updateQuery = 'UPDATE judges SET username = ?, judge_name = ?, password = ?, updated_at = NOW() WHERE judge_id = ?';
-        updateParams = [username, judge_name || null, password, judge_id];
-      }
+      updateData.password = password;
     }
-    
-    await executeQuery(updateQuery, updateParams);
 
-    // Get the updated judge with community names
-    const updatedJudgeQuery = `
-      SELECT 
-        j.judge_id, 
-        j.username, 
-        j.judge_name, 
-        j.community_ids,
-        GROUP_CONCAT(c.name ORDER BY c.name SEPARATOR ', ') as community_names,
-        j.created_at, 
-        j.updated_at
-      FROM judges j
-      LEFT JOIN communities c ON JSON_CONTAINS(j.community_ids, c.community_id)
-      WHERE j.judge_id = ?
-      GROUP BY j.judge_id, j.username, j.judge_name, j.community_ids, j.created_at, j.updated_at
-    `;
-    const updatedJudge = await executeQuery(updatedJudgeQuery, [judge_id]) as any[];
+    const updatedJudge = await prisma.judge.update({
+      where: { judge_id: judgeIdNumber },
+      data: updateData,
+      select: {
+        judge_id: true,
+        username: true,
+        judge_name: true,
+        community_ids: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
+
+    const updatedNames = Array.isArray(updatedJudge.community_ids)
+      ? updatedJudge.community_ids
+          .map((id) => communityNameMap.get(id as number))
+          .filter(Boolean)
+      : [];
 
     return NextResponse.json({
       success: true,
-      judge: updatedJudge[0],
+      judge: {
+        ...updatedJudge,
+        community_names: updatedNames.join(', ')
+      },
       message: 'Judge updated successfully'
     });
 
@@ -403,22 +411,23 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if judge exists and user has access
-    let existingJudge;
-    if (user.role === 'admin') {
-      // Admin can delete any judge
-      existingJudge = await executeQuery(
-        'SELECT judge_id, community_ids FROM judges WHERE judge_id = ?',
-        [judge_id]
-      ) as any[];
-    } else {
-      // Non-admin users can only delete judges from their community
-      existingJudge = await executeQuery(
-        'SELECT judge_id, community_ids FROM judges WHERE judge_id = ? AND JSON_CONTAINS(community_ids, ?)',
-        [judge_id, user.community_id]
-      ) as any[];
-    }
+    const judgeIdNumber = Number(judge_id);
+    const existingJudge = user.role === 'admin'
+      ? await prisma.judge.findUnique({
+          where: { judge_id: judgeIdNumber },
+          select: { judge_id: true, community_ids: true }
+        })
+      : await prisma.judge.findFirst({
+          where: {
+            judge_id: judgeIdNumber,
+            community_ids: {
+              array_contains: [user.community_id]
+            }
+          },
+          select: { judge_id: true, community_ids: true }
+        });
 
-    if (existingJudge.length === 0) {
+    if (!existingJudge) {
       return NextResponse.json({
         success: false,
         error: 'Judge not found or access denied'
@@ -426,40 +435,38 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Admin can delete any judge completely, non-admin may just remove from community
-    const judge = existingJudge[0];
+    const judge = existingJudge;
     
     if (user.role === 'admin') {
       // Admin deletes the judge completely
-      await executeQuery(
-        'DELETE FROM judges WHERE judge_id = ?',
-        [judge_id]
-      );
+      await prisma.judge.delete({
+        where: { judge_id: judgeIdNumber }
+      });
     } else {
       // Non-admin: handle community removal logic
       let communityIds: number[] = [];
       try {
-        communityIds = JSON.parse(judge.community_ids) as number[];
+        communityIds = Array.isArray(judge.community_ids)
+          ? (judge.community_ids as number[])
+          : [];
       } catch (e) {
         // Fallback for comma-separated format
-        communityIds = judge.community_ids
-          .split(',')
-          .map((id: string) => parseInt(id.trim(), 10));
+        communityIds = [];
       }
       
       if (communityIds.length > 1) {
         // Remove this community from the list
         const updatedCommunityIds = communityIds.filter((id) => id !== user.community_id);
         
-        await executeQuery(
-          'UPDATE judges SET community_ids = ? WHERE judge_id = ?',
-          [JSON.stringify(updatedCommunityIds), judge_id]
-        );
+        await prisma.judge.update({
+          where: { judge_id: judgeIdNumber },
+          data: { community_ids: updatedCommunityIds }
+        });
       } else {
         // Delete the judge completely if only belongs to this community
-        await executeQuery(
-          'DELETE FROM judges WHERE judge_id = ?',
-          [judge_id]
-        );
+        await prisma.judge.delete({
+          where: { judge_id: judgeIdNumber }
+        });
       }
     }
 

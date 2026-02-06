@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     // Test database connection first
     try {
-      await executeQuery('SELECT 1 as test');
+      await prisma.$queryRaw(Prisma.sql`SELECT 1`);
       console.log('Database connection successful');
     } catch (dbError) {
       console.error('Database connection failed:', dbError);
@@ -30,21 +31,30 @@ export async function POST(request: NextRequest) {
     }
 
     // Query user from database
-    const query = 'SELECT user_id, username, password, name, user_role FROM users WHERE username = ? AND user_role IN ("admin", "tournament_organizer")';
     console.log('Executing query with username:', username);
-    
-    const users = await executeQuery(query, [username]) as any[];
-    console.log('Query returned', users.length, 'users');
 
-    if (users.length === 0) {
+    const user = await prisma.user.findFirst({
+      where: {
+        username,
+        user_role: { in: ['admin', 'tournament_organizer'] }
+      },
+      select: {
+        user_id: true,
+        username: true,
+        password: true,
+        name: true,
+        user_role: true
+      }
+    });
+    console.log('Query returned', user ? 1 : 0, 'users');
+
+    if (!user) {
       console.log('No user found with username:', username);
       return NextResponse.json({
         success: false,
         error: 'Invalid credentials'
       }, { status: 401 });
     }
-
-    const user = users[0];
     console.log('Found user:', { id: user.user_id, username: user.username, role: user.user_role });
 
     // Password verification

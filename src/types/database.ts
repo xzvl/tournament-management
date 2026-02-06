@@ -44,6 +44,8 @@ export interface Judge {
   username: string;
   password: string;
   qr_code?: string;
+  judge_name?: string;
+  name?: string;
   community_ids: number[];
   created_at: Date;
   updated_at: Date;

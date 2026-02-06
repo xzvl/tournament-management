@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
 // GET - List all users (Admin only)
@@ -21,14 +21,21 @@ export async function GET(request: NextRequest) {
       }, { status: 403 });
     }
 
-    const query = `
-      SELECT user_id, username, email, name, player_name, challonge_username, 
-             api_key, user_role, created_at, updated_at 
-      FROM users 
-      ORDER BY username ASC
-    `;
-    
-    const users = await executeQuery(query, []) as any[];
+    const users = await prisma.user.findMany({
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        name: true,
+        player_name: true,
+        challonge_username: true,
+        api_key: true,
+        user_role: true,
+        created_at: true,
+        updated_at: true
+      },
+      orderBy: { username: 'asc' }
+    });
 
     return NextResponse.json({
       success: true,
@@ -73,44 +80,47 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if username or email already exists
-    const existingUser = await executeQuery(
-      'SELECT user_id FROM users WHERE username = ? OR email = ?', 
-      [username, email]
-    ) as any[];
-    
-    if (existingUser.length > 0) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [{ username }, { email }]
+      },
+      select: { user_id: true }
+    });
+
+    if (existingUser) {
       return NextResponse.json({
         success: false,
         error: 'Username or email already exists'
       }, { status: 400 });
     }
 
-    // Insert new user (storing plain text password for demo - use bcrypt in production)
-    const insertQuery = `
-      INSERT INTO users (username, email, password, name, player_name, challonge_username, api_key, user_role)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    
-    const result = await executeQuery(insertQuery, [
-      username,
-      email,
-      password, // In production, use: await bcrypt.hash(password, 10)
-      name,
-      player_name || null,
-      challonge_username || null,
-      api_key || null,
-      user_role
-    ]) as any;
-
-    // Get the created user
-    const newUser = await executeQuery(
-      'SELECT user_id, username, email, name, player_name, challonge_username, api_key, user_role, created_at FROM users WHERE user_id = ?',
-      [result.insertId]
-    ) as any[];
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        email,
+        password,
+        name,
+        player_name: player_name || null,
+        challonge_username: challonge_username || null,
+        api_key: api_key || null,
+        user_role
+      },
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        name: true,
+        player_name: true,
+        challonge_username: true,
+        api_key: true,
+        user_role: true,
+        created_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      user: newUser[0],
+      user: newUser,
       message: 'User created successfully'
     });
 

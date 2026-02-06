@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { executeQuery } from './database';
+import prisma from './prisma';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 
@@ -42,24 +42,27 @@ export async function verifyAuth(request: NextRequest): Promise<AuthResult> {
       };
     }
 
-    // Get user from database with community information
-    const query = `
-      SELECT u.user_id, u.username, u.email, u.user_role as role, c.community_id
-      FROM users u
-      LEFT JOIN communities c ON u.user_id = c.to_id
-      WHERE u.user_id = ?
-    `;
-    
-    const users = await executeQuery(query, [decoded.userId]) as any[];
-    
-    if (users.length === 0) {
+    const user = await prisma.user.findUnique({
+      where: { user_id: decoded.userId },
+      select: {
+        user_id: true,
+        username: true,
+        email: true,
+        user_role: true
+      }
+    });
+
+    if (!user) {
       return {
         success: false,
         error: 'User not found'
       };
     }
 
-    const user = users[0];
+    const community = await prisma.community.findFirst({
+      where: { to_id: String(user.user_id) },
+      select: { community_id: true }
+    });
     
     return {
       success: true,
@@ -67,8 +70,8 @@ export async function verifyAuth(request: NextRequest): Promise<AuthResult> {
         user_id: user.user_id,
         username: user.username,
         email: user.email,
-        role: user.role,
-        community_id: user.community_id || null
+        role: user.user_role,
+        community_id: community?.community_id ?? null
       }
     };
 

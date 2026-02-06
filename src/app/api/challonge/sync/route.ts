@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 async function checkTournamentExistsOnChallonge(
   challonge_id: string,
@@ -243,17 +243,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the user's Challonge credentials
-    const userQuery = 'SELECT challonge_username, api_key FROM users WHERE user_id = ?';
-    const userResult = await executeQuery(userQuery, [user_id]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id },
+      select: { challonge_username: true, api_key: true }
+    });
 
-    if (userResult.length === 0 || !userResult[0].api_key) {
+    if (!user?.api_key) {
       return NextResponse.json({
         success: false,
         error: 'User does not have Challonge API credentials configured'
       }, { status: 400 });
     }
 
-    const { challonge_username, api_key } = userResult[0];
+    const { challonge_username, api_key } = user;
 
     try {
       let result;

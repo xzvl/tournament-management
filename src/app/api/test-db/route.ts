@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import { Prisma } from '@prisma/client';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
     // Test basic connection
-    const testResult = await executeQuery('SELECT 1 as test') as any[];
+    const testResult = await prisma.$queryRaw(Prisma.sql`SELECT 1`);
     console.log('Database test result:', testResult);
 
-    // Test users table
-    const usersResult = await executeQuery('SELECT username, user_role FROM users LIMIT 3') as any[];
+    const usersResult = await prisma.user.findMany({
+      select: { username: true, user_role: true },
+      take: 3
+    });
     console.log('Users query result:', usersResult);
 
     return NextResponse.json({

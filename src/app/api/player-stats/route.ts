@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { getConnection } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 const SPECIAL_CHARS = '!@#$%^&*';
 const USERNAME_FALLBACK = 'player';
@@ -45,17 +45,16 @@ const generatePassword = (length = 10) => {
   return output.join('');
 };
 
-const resolveUniqueUsername = async (base: string, connection: any) => {
+const resolveUniqueUsername = async (base: string) => {
   let candidate = base;
   let suffix = 1;
 
   while (suffix < 100) {
-    const [rows] = await connection.execute(
-      'SELECT player_id FROM players WHERE username = ? LIMIT 1',
-      [candidate]
-    );
-    const existing = rows as Array<{ player_id: number }>;
-    if (existing.length === 0) {
+    const existing = await prisma.player.findFirst({
+      where: { username: candidate },
+      select: { player_id: true }
+    });
+    if (!existing) {
       return candidate;
     }
     suffix += 1;
@@ -77,12 +76,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const connection = await getConnection();
-
     try {
-      await connection.beginTransaction();
-
-      for (const player of players) {
+      await prisma.$transaction(async (tx) => {
+        for (const player of players) {
         const {
           playerName,
           spin,
@@ -98,68 +94,63 @@ export async function POST(request: NextRequest) {
           throw new Error('Player name is required');
         }
 
-        const [existingPlayers] = await connection.execute(
-          'SELECT player_id FROM players WHERE player_name = ? LIMIT 1',
-          [playerName]
-        );
-        const existing = existingPlayers as Array<{ player_id: number }>;
+        const existing = await tx.player.findFirst({
+          where: { player_name: playerName },
+          select: { player_id: true }
+        });
 
         let playerId: number;
 
-        if (existing.length > 0) {
-          playerId = existing[0].player_id;
+        if (existing) {
+          playerId = existing.player_id;
         } else {
           const baseUsername = normalizeUsername(playerName);
-          const username = await resolveUniqueUsername(baseUsername, connection);
+          const username = await resolveUniqueUsername(baseUsername);
           const password = generatePassword(10);
           const name = normalizeName(playerName);
 
-          const [insertResult] = await connection.execute(
-            'INSERT INTO players (username, password, name, player_name, community_ids) VALUES (?, ?, ?, ?, ?)',
-            [username, password, name, playerName, null]
-          );
-
-          const insertData = insertResult as { insertId: number };
-          playerId = insertData.insertId;
+          const inserted = await tx.player.create({
+            data: {
+              username,
+              password,
+              name,
+              player_name: playerName,
+              community_ids: null
+            },
+            select: { player_id: true }
+          });
+          playerId = inserted.player_id;
         }
 
         const normalizedStatus = matchStatus || 'completed';
         const normalizedSide = stadiumSide === 'B Side' ? 'B Side' : 'X Side';
 
-        await connection.execute(
-          `INSERT INTO player_stats
-            (challonge_id, player_id, match_id, spin, burst, \`over\`, extreme, penalty, match_result, stadium_side, match_status, match_stage)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-          ,
-          [
-            challongeId,
-            playerId,
-            String(matchId),
-            Number(spin) || 0,
-            Number(burst) || 0,
-            Number(over) || 0,
-            Number(extreme) || 0,
-            Number(penalty) || 0,
-            matchResult,
-            normalizedSide,
-            normalizedStatus,
-            matchStage
-          ]
-        );
+        await tx.playerStat.create({
+          data: {
+            challonge_id: challongeId,
+            player_id: playerId,
+            match_id: String(matchId),
+            spin: Number(spin) || 0,
+            burst: Number(burst) || 0,
+            over: Number(over) || 0,
+            extreme: Number(extreme) || 0,
+            penalty: Number(penalty) || 0,
+            match_result: matchResult,
+            stadium_side: normalizedSide,
+            match_status: normalizedStatus,
+            match_stage: matchStage
+          }
+        });
       }
-
-      await connection.commit();
+      });
 
       return NextResponse.json({ success: true });
     } catch (error) {
-      await connection.rollback();
       console.error('Player stats save error:', error);
       return NextResponse.json(
         { success: false, error: 'Failed to save player stats' },
         { status: 500 }
       );
-    } finally {
-      connection.release();
     }
   } catch (error) {
     console.error('Player stats API error:', error);

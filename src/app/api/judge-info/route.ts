@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,27 +15,25 @@ export async function GET(request: NextRequest) {
     }
 
     // Get judge information
-    const judges = await executeQuery(
-      'SELECT judge_id, name, username FROM judges WHERE judge_id = ?',
-      [judgeId]
-    ) as Array<{ judge_id: number; name: string; username: string }>;
+    const judge = await prisma.judge.findUnique({
+      where: { judge_id: Number(judgeId) },
+      select: { judge_id: true, name: true, username: true }
+    });
 
-    if (judges.length === 0) {
+    if (!judge) {
       return NextResponse.json(
         { success: false, error: 'Judge not found' },
         { status: 404 }
       );
     }
 
-    const judge = judges[0];
-
     // Get stadium number from tournament assignments
-    const tournaments = await executeQuery(
-      'SELECT assigned_judge_ids FROM challonge_tournaments WHERE challonge_id = ?',
-      [challongeId]
-    ) as Array<{ assigned_judge_ids: string | null }>;
+    const tournament = await prisma.challongeTournament.findUnique({
+      where: { challonge_id: challongeId },
+      select: { assigned_judge_ids: true }
+    });
 
-    if (tournaments.length === 0) {
+    if (!tournament) {
       return NextResponse.json(
         { success: false, error: 'Tournament not found' },
         { status: 404 }
@@ -43,17 +41,19 @@ export async function GET(request: NextRequest) {
     }
 
     let stadiumNumber: number | null = null;
-    const assignedJudgeIds = tournaments[0].assigned_judge_ids;
+    const assignedJudgeIds = tournament.assigned_judge_ids as unknown;
 
     if (assignedJudgeIds) {
-      try {
-        const judgeAssignments = JSON.parse(assignedJudgeIds) as Record<string, number[]>;
+      const assignments = typeof assignedJudgeIds === 'string'
+        ? JSON.parse(assignedJudgeIds)
+        : assignedJudgeIds;
+
+      if (assignments && typeof assignments === 'object') {
+        const judgeAssignments = assignments as Record<string, number[]>;
         const stadiums = judgeAssignments[judgeId.toString()];
         if (stadiums && stadiums.length > 0) {
-          stadiumNumber = stadiums[0]; // Get the first stadium number
+          stadiumNumber = stadiums[0];
         }
-      } catch (parseError) {
-        console.error('Error parsing assigned_judge_ids:', parseError);
       }
     }
 

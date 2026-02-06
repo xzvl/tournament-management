@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,12 +32,15 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        const judges = await executeQuery(
-          'SELECT judge_id FROM judges WHERE judge_id = ? AND username = ?',
-          [decoded.judge_id, decoded.username]
-        ) as Array<{ judge_id: number }>;
+        const judge = await prisma.judge.findFirst({
+          where: {
+            judge_id: decoded.judge_id,
+            username: decoded.username
+          },
+          select: { judge_id: true }
+        });
 
-        if (judges.length === 0) {
+        if (!judge) {
           return NextResponse.json(
             { success: false, message: 'Judge not found' },
             { status: 401 }
@@ -45,22 +48,25 @@ export async function POST(request: NextRequest) {
         }
 
         // Check if judge is assigned to this tournament
-        const tournaments = await executeQuery(
-          'SELECT assigned_judge_ids FROM challonge_tournaments WHERE challonge_id = ?',
-          [challongeId]
-        ) as Array<{ assigned_judge_ids: string | null }>;
+        const tournament = await prisma.challongeTournament.findUnique({
+          where: { challonge_id: challongeId },
+          select: { assigned_judge_ids: true }
+        });
 
-        if (tournaments.length === 0) {
+        if (!tournament) {
           return NextResponse.json(
             { success: false, message: 'Tournament not found' },
             { status: 404 }
           );
         }
 
-        const assignedJudgeIds = tournaments[0].assigned_judge_ids;
+        const assignedJudgeIds = tournament.assigned_judge_ids as unknown;
         if (assignedJudgeIds) {
           try {
-            const judgeAssignments = JSON.parse(assignedJudgeIds) as Record<string, number[]>;
+            const assignments = typeof assignedJudgeIds === 'string'
+              ? JSON.parse(assignedJudgeIds)
+              : assignedJudgeIds;
+            const judgeAssignments = assignments as Record<string, number[]>;
             const isAssigned = decoded.judge_id.toString() in judgeAssignments;
 
             if (!isAssigned) {
@@ -100,37 +106,43 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate username and password from database
-    const judges = await executeQuery(
-      'SELECT judge_id, username FROM judges WHERE username = ? AND password = ?',
-      [username, password]
-    ) as Array<{ judge_id: number; username: string }>;
+    const judge = await prisma.judge.findFirst({
+      where: {
+        username,
+        password
+      },
+      select: { judge_id: true, username: true }
+    });
 
-    if (judges.length === 0) {
+    if (!judge) {
       return NextResponse.json(
         { success: false, message: 'Invalid credentials' },
         { status: 401 }
       );
     }
 
-    const judgeId = judges[0].judge_id;
+    const judgeId = judge.judge_id;
 
     // Check if judge is assigned to this tournament
-    const tournaments = await executeQuery(
-      'SELECT assigned_judge_ids FROM challonge_tournaments WHERE challonge_id = ?',
-      [challongeId]
-    ) as Array<{ assigned_judge_ids: string | null }>;
+    const tournament = await prisma.challongeTournament.findUnique({
+      where: { challonge_id: challongeId },
+      select: { assigned_judge_ids: true }
+    });
 
-    if (tournaments.length === 0) {
+    if (!tournament) {
       return NextResponse.json(
         { success: false, message: 'Tournament not found' },
         { status: 404 }
       );
     }
 
-    const assignedJudgeIds = tournaments[0].assigned_judge_ids;
+    const assignedJudgeIds = tournament.assigned_judge_ids as unknown;
     if (assignedJudgeIds) {
       try {
-        const judgeAssignments = JSON.parse(assignedJudgeIds) as Record<string, number[]>;
+        const assignments = typeof assignedJudgeIds === 'string'
+          ? JSON.parse(assignedJudgeIds)
+          : assignedJudgeIds;
+        const judgeAssignments = assignments as Record<string, number[]>;
         const isAssigned = judgeId.toString() in judgeAssignments;
 
         if (!isAssigned) {

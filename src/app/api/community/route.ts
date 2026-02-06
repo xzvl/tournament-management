@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
 import jwt from 'jsonwebtoken';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
+import prisma from '@/lib/prisma';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -19,14 +19,16 @@ async function verifyAuth(request: NextRequest) {
     const decoded = jwt.verify(token, jwtSecret) as any;
     
     // Verify user exists
-    const query = 'SELECT user_id, username, user_role FROM users WHERE user_id = ?';
-    const users = await executeQuery(query, [decoded.userId]) as any[];
+    const user = await prisma.user.findUnique({
+      where: { user_id: decoded.userId },
+      select: { user_id: true, username: true, user_role: true }
+    });
 
-    if (users.length === 0) {
+    if (!user) {
       return { error: 'User not found', status: 401 };
     }
 
-    return { user: users[0] };
+    return { user };
   } catch (error) {
     return { error: 'Invalid token', status: 401 };
   }
@@ -65,16 +67,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Find user's community by to_id = user_id
-    const communityQuery = `
-      SELECT community_id, name, short_name, logo, cover, location, province, city, to_id, created_at, updated_at
-      FROM communities
-      WHERE to_id = ?
-      LIMIT 1
-    `;
-    
-    const communities = await executeQuery(communityQuery, [authCheck.user.user_id.toString()]) as any[];
+    const community = await prisma.community.findFirst({
+      where: { to_id: String(authCheck.user.user_id) },
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        logo: true,
+        cover: true,
+        location: true,
+        province: true,
+        city: true,
+        to_id: true,
+        created_at: true,
+        updated_at: true
+      }
+    });
 
-    if (communities.length === 0) {
+    if (!community) {
       return NextResponse.json({
         success: true,
         data: null,
@@ -84,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: communities[0]
+      data: community
     });
 
   } catch (error) {
@@ -124,12 +134,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user already has a community
-    const userCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE to_id = ?',
-      [authCheck.user.user_id.toString()]
-    ) as any[];
-    
-    if (userCommunity.length > 0) {
+    const userCommunity = await prisma.community.findFirst({
+      where: { to_id: String(authCheck.user.user_id) },
+      select: { community_id: true }
+    });
+
+    if (userCommunity) {
       return NextResponse.json({
         success: false,
         error: 'You already have a community. Please update it instead.'
@@ -137,12 +147,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if short_name already exists
-    const existingCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE short_name = ?',
-      [short_name]
-    ) as any[];
-    
-    if (existingCommunity.length > 0) {
+    const existingCommunity = await prisma.community.findFirst({
+      where: { short_name },
+      select: { community_id: true }
+    });
+
+    if (existingCommunity) {
       return NextResponse.json({
         success: false,
         error: 'Short name already exists'
@@ -162,31 +172,34 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert new community with to_id = user_id
-    const insertQuery = `
-      INSERT INTO communities (name, short_name, logo, cover, location, province, city, to_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    
-    const result = await executeQuery(insertQuery, [
-      name,
-      short_name,
-      logoUrl,
-      coverUrl,
-      location,
-      province,
-      city,
-      authCheck.user.user_id.toString() // Automatically link to user
-    ]) as any;
-
-    // Get the created community
-    const newCommunity = await executeQuery(
-      'SELECT community_id, name, short_name, logo, cover, location, province, city, to_id, created_at FROM communities WHERE community_id = ?',
-      [result.insertId]
-    ) as any[];
+    const newCommunity = await prisma.community.create({
+      data: {
+        name,
+        short_name,
+        logo: logoUrl,
+        cover: coverUrl,
+        location,
+        province,
+        city,
+        to_id: String(authCheck.user.user_id)
+      },
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        logo: true,
+        cover: true,
+        location: true,
+        province: true,
+        city: true,
+        to_id: true,
+        created_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      community: newCommunity[0],
+      community: newCommunity,
       message: 'Community created successfully'
     });
 
@@ -227,31 +240,30 @@ export async function PUT(request: NextRequest) {
     }
 
     // Find user's community by to_id = user_id
-    const communityQuery = `
-      SELECT community_id, logo, cover FROM communities 
-      WHERE to_id = ?
-      LIMIT 1
-    `;
-    
-    const communities = await executeQuery(communityQuery, [authCheck.user.user_id.toString()]) as any[];
+    const existingCommunity = await prisma.community.findFirst({
+      where: { to_id: String(authCheck.user.user_id) },
+      select: { community_id: true, logo: true, cover: true }
+    });
 
-    if (communities.length === 0) {
+    if (!existingCommunity) {
       return NextResponse.json({
         success: false,
         error: 'No community found to update. Please create one first.'
       }, { status: 404 });
     }
 
-    const communityId = communities[0].community_id;
-    const existingCommunity = communities[0];
+    const communityId = existingCommunity.community_id;
 
     // Check if short_name exists for other communities
-    const duplicateCommunity = await executeQuery(
-      'SELECT community_id FROM communities WHERE short_name = ? AND community_id != ?',
-      [short_name, communityId]
-    ) as any[];
-    
-    if (duplicateCommunity.length > 0) {
+    const duplicateCommunity = await prisma.community.findFirst({
+      where: {
+        short_name,
+        community_id: { not: communityId }
+      },
+      select: { community_id: true }
+    });
+
+    if (duplicateCommunity) {
       return NextResponse.json({
         success: false,
         error: 'Short name already exists'
@@ -271,32 +283,34 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update community
-    const updateQuery = `
-      UPDATE communities 
-      SET name = ?, short_name = ?, logo = ?, cover = ?, location = ?, province = ?, city = ?
-      WHERE community_id = ?
-    `;
-    
-    await executeQuery(updateQuery, [
-      name,
-      short_name,
-      logoUrl,
-      coverUrl,
-      location,
-      province,
-      city,
-      communityId
-    ]);
-
-    // Get the updated community
-    const updatedCommunity = await executeQuery(
-      'SELECT community_id, name, short_name, logo, cover, location, province, city, to_id, created_at FROM communities WHERE community_id = ?',
-      [communityId]
-    ) as any[];
+    const updatedCommunity = await prisma.community.update({
+      where: { community_id: communityId },
+      data: {
+        name,
+        short_name,
+        logo: logoUrl,
+        cover: coverUrl,
+        location,
+        province,
+        city
+      },
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        logo: true,
+        cover: true,
+        location: true,
+        province: true,
+        city: true,
+        to_id: true,
+        created_at: true
+      }
+    });
 
     return NextResponse.json({
       success: true,
-      community: updatedCommunity[0],
+      community: updatedCommunity,
       message: 'Community updated successfully'
     });
 

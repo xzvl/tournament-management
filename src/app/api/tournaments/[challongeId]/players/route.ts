@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
 const parsePlayers = (value: unknown) => {
@@ -34,16 +34,14 @@ export async function GET(
 
     const { challongeId } = await context.params;
 
-    const tournaments = await executeQuery(
-      'SELECT ch_id, to_id, pre_registered_players FROM challonge_tournaments WHERE challonge_id = ? LIMIT 1',
-      [challongeId]
-    ) as Array<{ ch_id: number; to_id: number | null; pre_registered_players: string | null }>;
+    const tournament = await prisma.challongeTournament.findUnique({
+      where: { challonge_id: challongeId },
+      select: { ch_id: true, to_id: true, pre_registered_players: true }
+    });
 
-    if (tournaments.length === 0) {
+    if (!tournament) {
       return NextResponse.json({ success: false, error: 'Tournament not found' }, { status: 404 });
     }
-
-    const tournament = tournaments[0];
     const user = authCheck.user;
     if (user.role !== 'admin' && tournament.to_id !== user.user_id) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
@@ -77,16 +75,14 @@ export async function POST(
       return NextResponse.json({ success: false, error: 'Player name is required' }, { status: 400 });
     }
 
-    const tournaments = await executeQuery(
-      'SELECT ch_id, to_id, pre_registered_players FROM challonge_tournaments WHERE challonge_id = ? LIMIT 1',
-      [challongeId]
-    ) as Array<{ ch_id: number; to_id: number | null; pre_registered_players: string | null }>;
+    const tournament = await prisma.challongeTournament.findUnique({
+      where: { challonge_id: challongeId },
+      select: { ch_id: true, to_id: true, pre_registered_players: true }
+    });
 
-    if (tournaments.length === 0) {
+    if (!tournament) {
       return NextResponse.json({ success: false, error: 'Tournament not found' }, { status: 404 });
     }
-
-    const tournament = tournaments[0];
     const user = authCheck.user;
     if (user.role !== 'admin' && tournament.to_id !== user.user_id) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
@@ -96,10 +92,10 @@ export async function POST(
     const hasExisting = players.some((player) => player.toLowerCase() === playerName.toLowerCase());
     const nextPlayers = hasExisting ? players : [...players, playerName];
 
-    await executeQuery(
-      'UPDATE challonge_tournaments SET pre_registered_players = ?, updated_at = CURRENT_TIMESTAMP WHERE ch_id = ?',
-      [JSON.stringify(nextPlayers), tournament.ch_id]
-    );
+    await prisma.challongeTournament.update({
+      where: { ch_id: tournament.ch_id },
+      data: { pre_registered_players: nextPlayers }
+    });
 
     return NextResponse.json({ success: true, players: nextPlayers });
   } catch (error) {

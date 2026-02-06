@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,19 +14,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Get judge name from database
-    const judges = await executeQuery(
-      'SELECT judge_id, judge_name FROM judges WHERE judge_id = ?',
-      [judgeId]
-    ) as Array<{ judge_id: number; judge_name: string }>;
+    const judge = await prisma.judge.findUnique({
+      where: { judge_id: Number(judgeId) },
+      select: { judge_id: true, judge_name: true }
+    });
 
-    if (judges.length === 0) {
+    if (!judge) {
       return NextResponse.json(
         { success: false, error: 'Judge not found' },
         { status: 404 }
       );
     }
-
-    const judge = judges[0];
 
     return NextResponse.json({
       success: true,

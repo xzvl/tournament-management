@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { executeQuery } from '@/lib/database';
+import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
 
 // GET - List tournaments for the user's communities
@@ -26,46 +26,37 @@ export async function GET(request: NextRequest) {
 
     const user = authCheck.user;
 
-    let query = '';
-    let params: any[] = [];
+    const tournaments = await prisma.challongeTournament.findMany({
+      where: showAll || user?.role === 'admin'
+        ? undefined
+        : { to_id: user?.user_id },
+      include: {
+        organizer: {
+          select: { username: true, name: true }
+        }
+      },
+      orderBy: [
+        { tournament_date: 'desc' },
+        { created_at: 'desc' }
+      ]
+    });
 
-    if (showAll || user?.role === 'admin') {
-      // Show all tournaments (for admin or when showAll=true)
-      query = `
-        SELECT ct.*,
-               u.username as organizer_username,
-               u.name as organizer_name,
-               c.name as community_name,
-               0 as participant_count
-        FROM challonge_tournaments ct
-        LEFT JOIN users u ON ct.to_id = u.user_id
-        LEFT JOIN communities c ON ct.to_id = c.to_id
-        ORDER BY ct.tournament_date DESC, ct.created_at DESC
-      `;
-    } else {
-      // Non-admin users can only see their own tournaments by default
-      query = `
-        SELECT ct.*,
-               u.username as organizer_username,
-               u.name as organizer_name,
-               c.name as community_name,
-               0 as participant_count
-        FROM challonge_tournaments ct
-        LEFT JOIN users u ON ct.to_id = u.user_id
-        LEFT JOIN communities c ON ct.to_id = c.to_id
-        WHERE ct.to_id = ?
-        ORDER BY ct.tournament_date DESC, ct.created_at DESC
-      `;
-      params = [user.user_id];
-    }
-
-    const tournaments = await executeQuery(query, params) as any[];
+    const communityRows = await prisma.community.findMany({
+      select: { community_id: true, name: true, to_id: true }
+    });
+    const communityByToId = new Map(
+      communityRows.map((community) => [community.to_id, community.name])
+    );
 
     // Format dates to PH timezone (Asia/Manila) with time
     const formattedTournaments = tournaments.map(tournament => ({
       ...tournament,
-      tournament_date: tournament.tournament_date ? 
-        new Date(tournament.tournament_date).toLocaleString('en-CA', { 
+      organizer_username: tournament.organizer?.username ?? null,
+      organizer_name: tournament.organizer?.name ?? null,
+      community_name: communityByToId.get(String(tournament.to_id ?? '')) ?? null,
+      participant_count: 0,
+      tournament_date: tournament.tournament_date ?
+        new Date(tournament.tournament_date).toLocaleString('en-CA', {
           timeZone: 'Asia/Manila',
           year: 'numeric',
           month: '2-digit',
@@ -74,7 +65,7 @@ export async function GET(request: NextRequest) {
           minute: '2-digit',
           second: '2-digit',
           hour12: false
-        }).replace(', ', 'T').replace(/\//g, '-') : 
+        }).replace(', ', 'T').replace(/\//g, '-') :
         tournament.tournament_date
     }));
 
@@ -131,12 +122,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if tournament with this challonge_id already exists
-    const existingTournament = await executeQuery(
-      'SELECT ch_id FROM challonge_tournaments WHERE challonge_id = ?',
-      [challonge_id]
-    ) as any[];
+    const existingTournament = await prisma.challongeTournament.findUnique({
+      where: { challonge_id },
+      select: { ch_id: true }
+    });
 
-    if (existingTournament.length > 0) {
+    if (existingTournament) {
       return NextResponse.json({
         success: false,
         error: 'Tournament with this Challonge ID already exists'
@@ -146,39 +137,28 @@ export async function POST(request: NextRequest) {
     // For non-admin users, simplify for now
     let finalAssignedJudgeIds = assigned_judge_ids || [];
 
-    // Insert new tournament
-    const insertQuery = `
-      INSERT INTO challonge_tournaments 
-      (challonge_id, challonge_url, challonge_name, challonge_cover, description, 
-       tournament_date, total_stadium, assigned_judge_ids, pre_registered_players, active, to_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const result = await executeQuery(insertQuery, [
-      challonge_id,
-      challonge_url,
-      challonge_name,
-      challonge_cover || null,
-      description || null,
-      tournament_date,
-      total_stadium || 1,
-      JSON.stringify(finalAssignedJudgeIds),
-      JSON.stringify(pre_registered_players || []),
-      true,
-      organizerId
-    ]) as any;
-
-    // Get the created tournament
-    const newTournament = await executeQuery(
-      'SELECT *, 0 as participant_count FROM challonge_tournaments WHERE ch_id = ?',
-      [result.insertId]
-    ) as any[];
+    const newTournament = await prisma.challongeTournament.create({
+      data: {
+        challonge_id,
+        challonge_url,
+        challonge_name,
+        challonge_cover: challonge_cover || null,
+        description: description || null,
+        tournament_date: new Date(tournament_date),
+        total_stadium: total_stadium || 1,
+        assigned_judge_ids: finalAssignedJudgeIds,
+        pre_registered_players: pre_registered_players || [],
+        active: true,
+        to_id: organizerId
+      }
+    });
 
     // Format date to PH timezone (Asia/Manila) with time
     const formattedTournament = {
-      ...newTournament[0],
-      tournament_date: newTournament[0].tournament_date ? 
-        new Date(newTournament[0].tournament_date).toLocaleString('en-CA', { 
+      ...newTournament,
+      participant_count: 0,
+      tournament_date: newTournament.tournament_date ?
+        new Date(newTournament.tournament_date).toLocaleString('en-CA', {
           timeZone: 'Asia/Manila',
           year: 'numeric',
           month: '2-digit',
@@ -187,8 +167,8 @@ export async function POST(request: NextRequest) {
           minute: '2-digit',
           second: '2-digit',
           hour12: false
-        }).replace(', ', 'T').replace(/\//g, '-') : 
-        newTournament[0].tournament_date
+        }).replace(', ', 'T').replace(/\//g, '-') :
+        newTournament.tournament_date
     };
 
     return NextResponse.json({
@@ -244,19 +224,13 @@ export async function PUT(request: NextRequest) {
     }
 
     // Check if tournament exists and user has permission
-    let existingQuery = '';
-    let existingParams: any[] = [ch_id];
+    const existing = await prisma.challongeTournament.findFirst({
+      where: user.role === 'admin'
+        ? { ch_id }
+        : { ch_id, to_id: user.user_id }
+    });
 
-    if (user.role === 'admin') {
-      existingQuery = 'SELECT * FROM challonge_tournaments WHERE ch_id = ?';
-    } else {
-      existingQuery = 'SELECT * FROM challonge_tournaments WHERE ch_id = ? AND to_id = ?';
-      existingParams.push(user.user_id);
-    }
-
-    const existing = await executeQuery(existingQuery, existingParams) as any[];
-
-    if (existing.length === 0) {
+    if (!existing) {
       return NextResponse.json({
         success: false,
         error: 'Tournament not found or access denied'
@@ -267,49 +241,29 @@ export async function PUT(request: NextRequest) {
     let finalAssignedJudgeIds = assigned_judge_ids;
 
     // Update tournament
-    const updateQuery = `
-      UPDATE challonge_tournaments 
-      SET challonge_id = COALESCE(?, challonge_id),
-          challonge_url = COALESCE(?, challonge_url),
-          challonge_name = COALESCE(?, challonge_name),
-          challonge_cover = COALESCE(?, challonge_cover),
-          description = COALESCE(?, description),
-          tournament_date = COALESCE(?, tournament_date),
-          total_stadium = COALESCE(?, total_stadium),
-          assigned_judge_ids = COALESCE(?, assigned_judge_ids),
-          pre_registered_players = COALESCE(?, pre_registered_players),
-          active = COALESCE(?, active),
-          to_id = COALESCE(?, to_id),
-          updated_at = CURRENT_TIMESTAMP
-      WHERE ch_id = ?
-    `;
-
-    await executeQuery(updateQuery, [
-      challonge_id,
-      challonge_url,
-      challonge_name,
-      challonge_cover,
-      description,
-      tournament_date,
-      total_stadium,
-      finalAssignedJudgeIds ? JSON.stringify(finalAssignedJudgeIds) : null,
-      pre_registered_players ? JSON.stringify(pre_registered_players) : null,
-      active,
-      (user.role === 'admin' && to_id) ? to_id : null,
-      ch_id
-    ]);
-
-    // Get the updated tournament
-    const updatedTournament = await executeQuery(
-      'SELECT *, 0 as participant_count FROM challonge_tournaments WHERE ch_id = ?',
-      [ch_id]
-    ) as any[];
+    const updatedTournament = await prisma.challongeTournament.update({
+      where: { ch_id },
+      data: {
+        challonge_id: challonge_id ?? undefined,
+        challonge_url: challonge_url ?? undefined,
+        challonge_name: challonge_name ?? undefined,
+        challonge_cover: challonge_cover ?? undefined,
+        description: description ?? undefined,
+        tournament_date: tournament_date ? new Date(tournament_date) : undefined,
+        total_stadium: total_stadium ?? undefined,
+        assigned_judge_ids: finalAssignedJudgeIds ?? undefined,
+        pre_registered_players: pre_registered_players ?? undefined,
+        active: active ?? undefined,
+        to_id: user.role === 'admin' && to_id ? to_id : undefined
+      }
+    });
 
     // Format date to PH timezone (Asia/Manila) with time
     const formattedTournament = {
-      ...updatedTournament[0],
-      tournament_date: updatedTournament[0].tournament_date ? 
-        new Date(updatedTournament[0].tournament_date).toLocaleString('en-CA', { 
+      ...updatedTournament,
+      participant_count: 0,
+      tournament_date: updatedTournament.tournament_date ?
+        new Date(updatedTournament.tournament_date).toLocaleString('en-CA', {
           timeZone: 'Asia/Manila',
           year: 'numeric',
           month: '2-digit',
@@ -318,8 +272,8 @@ export async function PUT(request: NextRequest) {
           minute: '2-digit',
           second: '2-digit',
           hour12: false
-        }).replace(', ', 'T').replace(/\//g, '-') : 
-        updatedTournament[0].tournament_date
+        }).replace(', ', 'T').replace(/\//g, '-') :
+        updatedTournament.tournament_date
     };
 
     return NextResponse.json({
@@ -360,19 +314,13 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Check if tournament exists and user has permission
-    let existingQuery = '';
-    let existingParams: any[] = [ch_id];
+    const existing = await prisma.challongeTournament.findFirst({
+      where: user.role === 'admin'
+        ? { ch_id }
+        : { ch_id, to_id: user.user_id }
+    });
 
-    if (user.role === 'admin') {
-      existingQuery = 'SELECT * FROM challonge_tournaments WHERE ch_id = ?';
-    } else {
-      existingQuery = 'SELECT * FROM challonge_tournaments WHERE ch_id = ? AND to_id = ?';
-      existingParams.push(user.user_id);
-    }
-
-    const existing = await executeQuery(existingQuery, existingParams) as any[];
-
-    if (existing.length === 0) {
+    if (!existing) {
       return NextResponse.json({
         success: false,
         error: 'Tournament not found or access denied'
@@ -380,10 +328,9 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete tournament
-    await executeQuery(
-      'DELETE FROM challonge_tournaments WHERE ch_id = ?',
-      [ch_id]
-    );
+    await prisma.challongeTournament.delete({
+      where: { ch_id }
+    });
 
     return NextResponse.json({
       success: true,
