@@ -13,10 +13,11 @@
     "migrate:mysql-to-postgres": "node scripts/migrate-mysql-to-postgres.mjs"
   },
   "dependencies": {
+    "@prisma/client": "^6.16.0",
+    "@supabase/supabase-js": "^2.95.3",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/multer": "^2.0.0",
-    "@prisma/client": "^6.16.0",
     "autoprefixer": "^10.4.23",
     "bcryptjs": "^3.0.3",
     "html2canvas": "^1.4.1",
