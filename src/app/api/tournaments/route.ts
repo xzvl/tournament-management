@@ -5,11 +5,10 @@ import { verifyAuth } from '@/lib/auth';
 // GET - List tournaments for the user's communities
 export async function GET(request: NextRequest) {
   try {
-    const url = new URL(request.url);
-    const showAll = url.searchParams.get('showAll') === 'true';
+    const showAll = request.nextUrl.searchParams.get('showAll') === 'true';
 
     let authCheck: any = { success: false, user: null };
-    
+
     // Only require auth if showAll is not true
     if (!showAll) {
       authCheck = await verifyAuth(request);
@@ -19,8 +18,8 @@ export async function GET(request: NextRequest) {
           error: 'Authentication required'
         }, { status: 401 });
       }
-    } else {
-      // For public access, try to get auth but don't fail if unavailable
+    } else if (request.headers.get('authorization')) {
+      // For public access, only attempt auth if a token is provided
       authCheck = await verifyAuth(request);
     }
 
