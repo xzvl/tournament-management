@@ -33,23 +33,7 @@ export async function GET(
     }
 
     const community = await prisma.community.findUnique({
-      where: { community_id: communityId },
-      select: {
-        community_id: true,
-        name: true,
-        short_name: true,
-        location: true,
-        city: true,
-        province: true,
-        logo: true,
-        cover: true,
-        to_id: true,
-        main_color: true,
-        secondary_color: true,
-        socmed_urls: true,
-        created_at: true,
-        updated_at: true
-      }
+      where: { community_id: communityId }
     });
 
     if (!community) {
