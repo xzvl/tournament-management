@@ -3,28 +3,25 @@ import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth';
 
-// Use a shared select object cast to `any` to avoid TypeScript errors
-// when the generated Prisma client is out-of-sync with the schema.
-const COMMUNITY_SELECT: any = {
-  community_id: true,
-  name: true,
-  short_name: true,
-  location: true,
-  city: true,
-  province: true,
-  logo: true,
-  cover: true,
-  to_id: true,
-  main_color: true,
-  socmed_urls: true,
-  created_at: true,
-  updated_at: true
-};
+// Explicit selects (kept in-sync with Prisma schema)
 export async function GET(request: NextRequest) {
   try {
     // Get all communities
     const communities = await prisma.community.findMany({
-      select: COMMUNITY_SELECT,
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        logo: true,
+        cover: true,
+        to_id: true,
+        main_color: true,
+        socmed_urls: true,
+        created_at: true
+      },
       orderBy: { name: 'asc' }
     });
 
@@ -95,7 +92,19 @@ export async function POST(request: NextRequest) {
         main_color: main_color || null,
         socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
       },
-      select: COMMUNITY_SELECT
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        to_id: true,
+        main_color: true,
+        socmed_urls: true,
+        created_at: true,
+        updated_at: true
+      }
     });
 
     return NextResponse.json({
@@ -184,7 +193,19 @@ export async function PUT(request: NextRequest) {
         main_color: main_color || null,
         socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
       },
-      select: COMMUNITY_SELECT
+      select: {
+        community_id: true,
+        name: true,
+        short_name: true,
+        location: true,
+        city: true,
+        province: true,
+        to_id: true,
+        main_color: true,
+        socmed_urls: true,
+        created_at: true,
+        updated_at: true
+      }
     });
 
     return NextResponse.json({
