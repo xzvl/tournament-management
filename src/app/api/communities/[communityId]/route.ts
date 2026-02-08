@@ -34,9 +34,7 @@ export async function GET(
 
     const community = await prisma.community.findUnique({
       where: { community_id: communityId },
-      // Cast select to `any` because generated Prisma Client types may differ
-      // across environments; we want to safely include new fields when present.
-      select: ({
+      select: {
         community_id: true,
         name: true,
         short_name: true,
@@ -51,7 +49,7 @@ export async function GET(
         socmed_urls: true,
         created_at: true,
         updated_at: true
-      } as any)
+      }
     });
 
     if (!community) {
