@@ -13,6 +13,8 @@ export default function BackendLayout({ children }: { children: React.ReactNode 
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [communityLogo, setCommunityLogo] = useState<string | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const isLoginPage = useMemo(() => pathname === '/backend/login', [pathname]);
 
@@ -72,9 +74,52 @@ export default function BackendLayout({ children }: { children: React.ReactNode 
     }
   }, [isLoginPage]);
 
+  useEffect(() => {
+    setIsMenuOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth >= 1024) {
+        setIsMenuOpen(false);
+      }
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const handleLogout = () => {
     localStorage.removeItem('authToken');
     router.push('/backend/login');
+  };
+
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-disable-menu-swipe="true"]')) {
+      setTouchStartX(null);
+      return;
+    }
+    setTouchStartX(event.touches[0]?.clientX ?? null);
+  };
+
+  const handleTouchEnd = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (touchStartX === null) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-disable-menu-swipe="true"]')) {
+      setTouchStartX(null);
+      return;
+    }
+    const endX = event.changedTouches[0]?.clientX ?? touchStartX;
+    const deltaX = endX - touchStartX;
+
+    if (deltaX > 60) {
+      setIsMenuOpen(true);
+    } else if (deltaX < -60) {
+      setIsMenuOpen(false);
+    }
+    setTouchStartX(null);
   };
 
   if (isLoginPage) {
@@ -84,11 +129,18 @@ export default function BackendLayout({ children }: { children: React.ReactNode 
   const isAdmin = user?.user_role === 'admin';
 
   return (
-    <div className="backend-shell min-h-screen flex bg-gray-100">
-      <aside className="w-64 bg-[#0d0e1b] text-white flex flex-col px-6 py-6 sticky top-0 h-screen">
+    <div
+      className="backend-shell min-h-screen flex bg-gray-100 relative"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <aside
+        className={`bg-[#0d0e1b] text-white flex flex-col px-6 py-6 fixed lg:sticky top-0 h-screen h-[100dvh] z-40 transition-transform duration-300 lg:translate-x-0 ${
+          isMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        } w-[70vw] max-w-[320px] lg:w-64`}
+      >
         <div className="flex items-center gap-3">
-          <img src="/assets/logo.webp" alt="BeybladeX" className="w-[25px] h-auto" />
-          <span className="text-sm font-semibold uppercase tracking-wide">Dashboard</span>
+          <img src="/assets/logo.webp" alt="BeybladeX" className="w-[140px] h-auto" />
         </div>
 
         <div className="mt-8 space-y-3 text-sm">
@@ -148,7 +200,36 @@ export default function BackendLayout({ children }: { children: React.ReactNode 
         </div>
       </aside>
 
-      <div className="flex-1 min-w-0">
+      {isMenuOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          onClick={() => setIsMenuOpen(false)}
+          className="fixed inset-0 bg-black/60 z-30 lg:hidden backend-no-red"
+        />
+      )}
+
+      <div
+        className="flex-1 min-w-0"
+        onClick={() => setIsMenuOpen(false)}
+      >
+        <header className="lg:hidden sticky top-0 z-20 bg-[#0d0e1b] text-white px-4 py-3 flex items-center justify-between">
+          <button
+            type="button"
+            aria-label="Open menu"
+            onClick={(event) => {
+              event.stopPropagation();
+              setIsMenuOpen(true);
+            }}
+            className="text-white/80 hover:text-white transition-colors backend-no-red"
+          >
+            <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z" />
+            </svg>
+          </button>
+          <img src="/assets/logo.webp" alt="BeybladeX" className="w-[70px] h-auto" />
+          <span className="w-6" aria-hidden="true"></span>
+        </header>
         {children}
       </div>
     </div>

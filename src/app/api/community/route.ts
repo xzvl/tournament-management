@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -83,6 +84,9 @@ export async function GET(request: NextRequest) {
         short_name: true,
         logo: true,
         cover: true,
+        main_color: true,
+        secondary_color: true,
+        socmed_urls: true,
         location: true,
         province: true,
         city: true,
@@ -146,6 +150,18 @@ export async function POST(request: NextRequest) {
     const location = formData.get('location') as string || null;
     const province = formData.get('province') as string || null;
     const city = formData.get('city') as string || null;
+    const main_color = (formData.get('main_color') as string) || null;
+    const secondary_color = (formData.get('secondary_color') as string) || null;
+    const socmedRaw = formData.get('socmed_urls') as string | null;
+    let socmed_urls: string[] | null = null;
+    if (socmedRaw) {
+      try {
+        const parsed = JSON.parse(socmedRaw);
+        socmed_urls = Array.isArray(parsed) ? parsed : null;
+      } catch {
+        socmed_urls = null;
+      }
+    }
     const logoFile = formData.get('logo') as File | null;
     const coverFile = formData.get('cover') as File | null;
 
@@ -201,6 +217,9 @@ export async function POST(request: NextRequest) {
         short_name,
         logo: logoUrl,
         cover: coverUrl,
+        main_color,
+        secondary_color,
+        socmed_urls: socmed_urls !== null ? socmed_urls : Prisma.JsonNull,
         location,
         province,
         city,
@@ -212,6 +231,9 @@ export async function POST(request: NextRequest) {
         short_name: true,
         logo: true,
         cover: true,
+        main_color: true,
+        secondary_color: true,
+        socmed_urls: true,
         location: true,
         province: true,
         city: true,
@@ -252,6 +274,18 @@ export async function PUT(request: NextRequest) {
     const location = formData.get('location') as string || null;
     const province = formData.get('province') as string || null;
     const city = formData.get('city') as string || null;
+    const main_color = (formData.get('main_color') as string) || null;
+    const secondary_color = (formData.get('secondary_color') as string) || null;
+    const socmedRaw = formData.get('socmed_urls') as string | null;
+    let socmed_urls: string[] | null = null;
+    if (socmedRaw) {
+      try {
+        const parsed = JSON.parse(socmedRaw);
+        socmed_urls = Array.isArray(parsed) ? parsed : null;
+      } catch {
+        socmed_urls = null;
+      }
+    }
     const logoFile = formData.get('logo') as File | null;
     const coverFile = formData.get('cover') as File | null;
 
@@ -328,6 +362,9 @@ export async function PUT(request: NextRequest) {
         short_name,
         logo: logoUrl,
         cover: coverUrl,
+        main_color,
+        secondary_color,
+        socmed_urls: socmed_urls !== null ? socmed_urls : Prisma.JsonNull,
         location,
         province,
         city
@@ -338,6 +375,9 @@ export async function PUT(request: NextRequest) {
         short_name: true,
         logo: true,
         cover: true,
+        main_color: true,
+        secondary_color: true,
+        socmed_urls: true,
         location: true,
         province: true,
         city: true,

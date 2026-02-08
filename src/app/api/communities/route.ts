@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth';
 
 export async function GET(request: NextRequest) {
@@ -16,6 +17,8 @@ export async function GET(request: NextRequest) {
         logo: true,
         cover: true,
         to_id: true,
+        main_color: true,
+        socmed_urls: true,
         created_at: true
       },
       orderBy: { name: 'asc' }
@@ -55,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, short_name, location, city, province, to_id } = body;
+    const { name, short_name, location, city, province, to_id, main_color, socmed_urls } = body;
 
     if (!name || !short_name) {
       return NextResponse.json({
@@ -84,7 +87,9 @@ export async function POST(request: NextRequest) {
         location: location || null,
         city: city || null,
         province: province || null,
-        to_id: to_id || null
+        to_id: to_id || null,
+        main_color: main_color || null,
+        socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
       },
       select: {
         community_id: true,
@@ -94,6 +99,8 @@ export async function POST(request: NextRequest) {
         city: true,
         province: true,
         to_id: true,
+        main_color: true,
+        socmed_urls: true,
         created_at: true,
         updated_at: true
       }
@@ -134,7 +141,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { community_id, name, short_name, location, city, province, to_id } = body;
+    const { community_id, name, short_name, location, city, province, to_id, main_color, socmed_urls } = body;
 
     if (!community_id || !name || !short_name) {
       return NextResponse.json({
@@ -181,7 +188,9 @@ export async function PUT(request: NextRequest) {
         location: location || null,
         city: city || null,
         province: province || null,
-        to_id: to_id || null
+        to_id: to_id || null,
+        main_color: main_color || null,
+        socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
       },
       select: {
         community_id: true,
@@ -191,6 +200,8 @@ export async function PUT(request: NextRequest) {
         city: true,
         province: true,
         to_id: true,
+        main_color: true,
+        socmed_urls: true,
         created_at: true,
         updated_at: true
       }

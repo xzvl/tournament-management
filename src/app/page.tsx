@@ -9,6 +9,7 @@ interface Tournament {
   challonge_name: string;
   challonge_cover?: string;
   tournament_date: string;
+  pre_register_cutoff?: string | null;
   active: boolean;
   community_name?: string;
   organizer_name?: string;
@@ -26,6 +27,8 @@ interface Community {
   to_id?: number;
   organizer_username?: string;
   organizer_name?: string;
+  main_color?: string | null;
+  socmed_urls?: any; // could be array or object or null
 }
 
 interface PlayerOption {
@@ -140,6 +143,13 @@ export default function HomePage() {
         const data = await response.json();
         if (data.success) {
           setCommunities(data.communities || []);
+          // Debug: log full community objects for inspection
+          try {
+            console.log('Loaded communities:', data.communities);
+            (data.communities || []).forEach((c: any) => console.log('community', c));
+          } catch (e) {
+            console.log('Communities debug log error', e);
+          }
         }
       } catch (e) {
         console.error('Failed to load communities');
@@ -200,14 +210,31 @@ export default function HomePage() {
     }).toUpperCase();
   };
 
-  const isTournamentLive = (dateString: string) => {
+  const isSameDay = (a: Date, b: Date) => {
+    return a.getFullYear() === b.getFullYear()
+      && a.getMonth() === b.getMonth()
+      && a.getDate() === b.getDate();
+  };
+
+  const getTournamentStatusLabel = (dateString: string) => {
+    const now = new Date();
     const start = new Date(dateString);
-    return new Date() >= start;
+    const isToday = isSameDay(now, start);
+
+    if (isToday && now >= start) return 'On Going';
+    if (isToday) return 'Today';
+    if (now < start) return 'Upcoming';
+    return 'Recent';
+  };
+
+  const isPreRegisterClosed = (tournament: Tournament) => {
+    const cutoff = tournament.pre_register_cutoff || tournament.tournament_date;
+    return new Date() >= new Date(cutoff);
   };
 
   const filteredPlayerOptions = useMemo(() => {
     const term = playerName.trim().toLowerCase();
-    if (!term) return playerOptions;
+    if (term.length < 3) return [];
     return playerOptions.filter((player) => player.player_name.toLowerCase().includes(term));
   }, [playerName, playerOptions]);
 
@@ -382,6 +409,65 @@ export default function HomePage() {
     
     return filtered;
   }, [communities, selectedProvince, selectedCommunity]);
+
+  // Helpers for social icons
+  const normalizeSocmedList = (raw: any): string[] => {
+    if (!raw) return [];
+      if (Array.isArray(raw)) return raw.filter(Boolean) as string[];
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean) as string[];
+        if (typeof parsed === 'object' && parsed !== null) return Object.values(parsed).filter(Boolean).map(String);
+      } catch {
+        return [raw].filter(Boolean);
+      }
+    }
+    if (typeof raw === 'object') return Object.values(raw).filter(Boolean).map(String);
+    return [];
+  };
+
+  const getPlatform = (url: string) => {
+    try {
+      const host = new URL(url).hostname.toLowerCase();
+      if (host.includes('facebook.com')) return 'facebook';
+      if (host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+      if (host.includes('twitter.com')) return 'twitter';
+      if (host.includes('instagram.com')) return 'instagram';
+      if (host.includes('tiktok.com')) return 'tiktok';
+      if (host.includes('discord.gg') || host.includes('discord.com')) return 'discord';
+      if (host.includes('twitch.tv')) return 'twitch';
+    } catch {
+      // ignore
+    }
+    return 'link';
+  };
+
+  const SocialIcon = ({ url }: { url: string }) => {
+    const p = getPlatform(url);
+    if (p === 'facebook') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+    );
+    if (p === 'youtube') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+    );
+    if (p === 'instagram') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M7 2C4.243 2 2 4.243 2 7v10c0 2.757 2.243 5 5 5h10c2.757 0 5-2.243 5-5V7c0-2.757-2.243-5-5-5H7zm10 2a3 3 0 013 3v10a3 3 0 01-3 3H7a3 3 0 01-3-3V7a3 3 0 013-3h10zM12 7.5A4.5 4.5 0 1012 16.5 4.5 4.5 0 0012 7.5zm0 2a2.5 2.5 0 110 5 2.5 2.5 0 010-5zM18.5 6a.88.88 0 11-.001 1.761A.88.88 0 0118.5 6z"/></svg>
+    );
+    if (p === 'twitter') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M24 4.557a9.83 9.83 0 01-2.828.775A4.932 4.932 0 0023.337 3.1a9.864 9.864 0 01-3.127 1.195 4.918 4.918 0 00-8.38 4.482A13.956 13.956 0 011.671 3.149a4.918 4.918 0 001.523 6.574A4.903 4.903 0 01.964 9.1v.062a4.918 4.918 0 003.946 4.827 4.902 4.902 0 01-2.212.084 4.922 4.922 0 004.596 3.417A9.868 9.868 0 010 21.543a13.945 13.945 0 007.548 2.212c9.056 0 14.01-7.506 14.01-14.01 0-.213-.004-.425-.014-.636A10.012 10.012 0 0024 4.557z"/></svg>
+    );
+    if (p === 'tiktok') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z"/></svg>
+    );
+    if (p === 'discord') return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M20.317 4.369A19.791 19.791 0 0016.85 3c-.26.448-.558 1.03-.766 1.49-2.28-.342-4.55-.342-6.824 0-.21-.46-.51-1.043-.77-1.49A19.736 19.736 0 003.68 4.37C.533 9.026-.319 13.472.066 17.793 4.03 20.28 8.02 21.5 12 21.5s7.971-1.22 11.934-3.708c.43-4.32-.421-8.766-3.617-13.423zM9.75 15.25c-1.01 0-1.84-.93-1.84-2.083 0-1.15.82-2.083 1.84-2.083 1.04 0 1.87.93 1.84 2.083 0 1.15-.8 2.083-1.84 2.083zm4.5 0c-1.01 0-1.84-.93-1.84-2.083 0-1.15.82-2.083 1.84-2.083 1.04 0 1.87.93 1.84 2.083 0 1.15-.8 2.083-1.84 2.083z"/></svg>
+    );
+    // default link icon
+    return (
+      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M3.9 12a5 5 0 017.07-7.07l1.41 1.41-1.41 1.41-1.41-1.41A3 3 0 106.48 12l1.41-1.41L12 12l-4.1 4.1A5 5 0 013.9 12zM20.1 12a5 5 0 01-7.07 7.07L11.62 17.66l1.41-1.41 1.41 1.41A3 3 0 0017.52 12l-1.41 1.41L12 12l4.1-4.1A5 5 0 0120.1 12z"/></svg>
+    );
+  };
 
   return (
     <>
@@ -613,7 +699,7 @@ export default function HomePage() {
                           ? 'bg-red-600 text-white' 
                           : 'bg-gray-600 text-white'
                       }`}>
-                        {tournament.active ? 'Active' : 'Inactive'}
+                        {tournament.active ? getTournamentStatusLabel(tournament.tournament_date) : 'Inactive'}
                       </span>
                     </div>
                   )}
@@ -645,7 +731,7 @@ export default function HomePage() {
                       </div>
                     </div>
                     
-                    {isTournamentLive(tournament.tournament_date) ? (
+                    {isPreRegisterClosed(tournament) ? (
                       <button
                         onClick={() => router.push(`/${tournament.challonge_id}`)}
                         className="mt-auto w-full bg-red-600 hover:bg-red-700 text-white py-2 px-3 text-sm font-medium transition-colors"
@@ -692,9 +778,11 @@ export default function HomePage() {
                     type="text"
                     value={playerName}
                     onChange={(event) => {
-                      setPlayerName(event.target.value);
-                      setShowPlayerDropdown(true);
-                      const match = playerOptions.find((player) => player.player_name.toLowerCase() === event.target.value.trim().toLowerCase());
+                      const nextValue = event.target.value;
+                      const trimmed = nextValue.trim();
+                      setPlayerName(nextValue);
+                      setShowPlayerDropdown(trimmed.length >= 3);
+                      const match = playerOptions.find((player) => player.player_name.toLowerCase() === trimmed.toLowerCase());
                       if (match?.name) {
                         setFullName(match.name);
                         setIsKnownPlayer(true);
@@ -703,7 +791,7 @@ export default function HomePage() {
                         setIsKnownPlayer(false);
                       }
                     }}
-                    onFocus={() => setShowPlayerDropdown(true)}
+                    onFocus={() => setShowPlayerDropdown(playerName.trim().length >= 3)}
                     onBlur={() => setTimeout(() => setShowPlayerDropdown(false), 120)}
                     className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-white placeholder-white/40 focus:border-red-500 focus:outline-none"
                     placeholder="Select player"
@@ -911,7 +999,10 @@ export default function HomePage() {
                   
                   {/* Half Slash Background */}
                   <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                    <div className="absolute bottom-0 left-0 w-full h-full bg-red-600 transform origin-bottom-left skew-x-[-30deg]"></div>
+                    <div
+                      className="absolute bottom-0 left-0 w-full h-full transform origin-bottom-left skew-x-[-30deg]"
+                      style={{ backgroundColor: community.main_color || '#dc2626' }}
+                    ></div>
                   </div>
                   
                   {/* Logo Container with Info - 3:6 aspect ratio */}
@@ -936,17 +1027,19 @@ export default function HomePage() {
                       <h3 className="font-semibold text-white text-[1.4rem] line-clamp-2 text-center uppercase tracking-[-1px]">{community.name}</h3>
                       
                       {/* Social Icons */}
-                      <div className="flex items-center gap-3">
-                        <a href="#" className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors">
-                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                          </svg>
-                        </a>
-                        <a href="#" className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors">
-                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
-                          </svg>
-                        </a>
+                      <div className="flex items-center gap-3 h-8">
+                        {normalizeSocmedList(community.socmed_urls).map((url, idx) => (
+                          <a
+                            key={idx}
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 flex items-center justify-center transition-colors"
+                            title={url}
+                          >
+                            <SocialIcon url={url} />
+                          </a>
+                        ))}
                       </div>
                     </div>
                   </div>

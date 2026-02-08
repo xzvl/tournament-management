@@ -268,12 +268,12 @@ function TournamentsSection({ user, router }: { user: User; router: any }) {
         if (data.success && data.tournaments) {
           // Filter tournaments to show upcoming and 1 week past tournaments
           const now = new Date();
-          const oneWeekAgo = new Date();
-          oneWeekAgo.setDate(now.getDate() - 7);
-          
+          const twoWeeksAgo = new Date();
+          twoWeeksAgo.setDate(now.getDate() - 14);
+
           const filteredTournaments = data.tournaments.filter((tournament: any) => {
             const tournamentDate = new Date(tournament.tournament_date);
-            return tournamentDate >= oneWeekAgo;
+            return tournamentDate >= twoWeeksAgo;
           });
           
           setTournaments(filteredTournaments);
@@ -299,11 +299,49 @@ function TournamentsSection({ user, router }: { user: User; router: any }) {
     });
   };
 
+  const formatDateOnly = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    }).toUpperCase();
+  };
+
+  const formatTimeOnly = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    }).toUpperCase();
+  };
+
+  const isSameDay = (a: Date, b: Date) => {
+    return a.getFullYear() === b.getFullYear()
+      && a.getMonth() === b.getMonth()
+      && a.getDate() === b.getDate();
+  };
+
+  const getTournamentStatusLabel = (dateString: string) => {
+    const now = new Date();
+    const start = new Date(dateString);
+    const isToday = isSameDay(now, start);
+
+    if (isToday && now >= start) return 'On Going';
+    if (isToday) return 'Today';
+    if (now < start) return 'Upcoming';
+    return 'Recent';
+  };
+
+  const isPreRegisterClosed = (tournament: any) => {
+    const cutoff = tournament.pre_register_cutoff || tournament.tournament_date;
+    return new Date() >= new Date(cutoff);
+  };
+
   return (
     <div className="bg-white rounded-lg shadow-sm border">
       <div className="px-6 py-4 border-b">
         <h2 className="text-lg font-semibold text-gray-900">All Tournaments</h2>
-        <p className="text-sm text-gray-600">All upcoming tournaments and recent events from the past week</p>
+        <p className="text-sm text-gray-600">All upcoming tournaments and recent events from the past two weeks</p>
       </div>
 
       {isLoading ? (
@@ -311,42 +349,69 @@ function TournamentsSection({ user, router }: { user: User; router: any }) {
           <div className="animate-spin backend-spinner rounded-full h-8 w-8 border-b-2 border-red-600 mx-auto"></div>
         </div>
       ) : tournaments.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-6">
           {tournaments.map((tournament) => (
-            <div key={tournament.ch_id} className="bg-gray-50 rounded-lg p-4 hover:bg-gray-100 transition-colors">
+            <div key={tournament.ch_id} className="bg-gray-50 hover:bg-gray-100 transition-colors flex flex-col rounded-lg overflow-hidden border">
               {tournament.challonge_cover && (
-                <img 
-                  src={tournament.challonge_cover} 
-                  alt={tournament.challonge_name}
-                  className="w-full h-32 object-cover rounded-lg mb-3"
-                />
+                <div className="relative">
+                  <img 
+                    src={tournament.challonge_cover} 
+                    alt={tournament.challonge_name}
+                    className="w-full h-48 object-cover mb-3"
+                  />
+                  <span className={`absolute bottom-0 left-0 px-3 py-2 text-sm font-semibold uppercase ${
+                    tournament.active 
+                      ? 'bg-red-600 text-white' 
+                      : 'bg-gray-600 text-white'
+                  }`}>
+                    {tournament.active ? getTournamentStatusLabel(tournament.tournament_date) : 'Inactive'}
+                  </span>
+                </div>
               )}
-              
-              <div className="mb-2">
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  tournament.active 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-gray-100 text-gray-800'
-                }`}>
-                  {tournament.active ? 'Active' : 'Inactive'}
-                </span>
+
+              <div className="p-4 flex-1 flex flex-col">
+                <div className="flex items-center gap-2 mb-2 text-sm text-gray-700">
+                  <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                  </svg>
+                  <span className="truncate uppercase text-gray-900">{tournament.community_name ? `${tournament.community_name}` : 'Independent'}</span>
+                </div>
+
+                <h3 className="font-semibold text-gray-900 mb-3 line-clamp-2 text-lg sm:text-xl">{tournament.challonge_name}</h3>
+
+                <p className="text-sm text-gray-700 mb-4 line-clamp-3">{tournament.description || 'Exciting tournament event'}</p>
+
+                <div className="flex items-center gap-4 mb-4 text-sm text-gray-700">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd"></path>
+                    </svg>
+                    <span className="text-gray-900">{formatDateOnly(tournament.tournament_date)}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-12.75a.75.75 0 00-1.5 0v4.19l2.72 2.72a.75.75 0 101.06-1.06L10.75 8.94V5.25z" clipRule="evenodd"></path>
+                    </svg>
+                    <span className="text-gray-900">{formatTimeOnly(tournament.tournament_date)}</span>
+                  </div>
+                </div>
+
+                {isPreRegisterClosed(tournament) ? (
+                  <button
+                    onClick={() => router.push(`/${tournament.challonge_id}`)}
+                    className="mt-auto w-full bg-red-600 hover:bg-red-700 text-white py-2 px-3 text-sm font-medium transition-colors rounded"
+                  >
+                    Get Started
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => router.push(`/backend/tournaments/${tournament.challonge_id}/players`)}
+                    className="mt-auto w-full bg-red-600 hover:bg-red-700 text-white py-2 px-3 text-sm font-medium transition-colors rounded"
+                  >
+                    Pre-Register
+                  </button>
+                )}
               </div>
-              
-              <h3 className="font-semibold text-gray-900 mb-1 truncate">{tournament.challonge_name}</h3>
-              <p className="text-sm text-gray-600 mb-1">ID: {tournament.challonge_id}</p>
-              {(tournament.community_name || tournament.organizer_name) && (
-                <p className="text-sm text-gray-500 mb-1">
-                  Community: <strong>{tournament.community_name ? `${tournament.community_name}` : 'Independent'}</strong>
-                </p>
-              )}
-              <p className="text-sm text-gray-600 mb-3">{formatDate(tournament.tournament_date)}</p>
-              
-              <button
-                onClick={() => router.push(`/${tournament.challonge_id}`)}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-3 rounded text-sm font-medium transition-colors"
-              >
-                View Tournament
-              </button>
             </div>
           ))}
         </div>

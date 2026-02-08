@@ -15,6 +15,9 @@ interface Community {
   short_name: string;
   logo?: string;
   cover?: string;
+  main_color?: string;
+  secondary_color?: string;
+  socmed_urls?: string[] | null;
   location?: string;
   province?: string;
   city?: string;
@@ -32,6 +35,7 @@ function CommunityManagementInner() {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string>('');
   const [coverPreview, setCoverPreview] = useState<string>('');
+  const [socmedUrls, setSocmedUrls] = useState<string[]>(['']);
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectFrom = searchParams.get('redirect');
@@ -41,6 +45,8 @@ function CommunityManagementInner() {
     short_name: '',
     logo: '',
     cover: '',
+    main_color: '',
+    secondary_color: '',
     location: '',
     province: '',
     city: ''
@@ -88,10 +94,16 @@ function CommunityManagementInner() {
           short_name: communityData.data.short_name || '',
           logo: communityData.data.logo || '',
           cover: communityData.data.cover || '',
+          main_color: communityData.data.main_color || '',
+          secondary_color: communityData.data.secondary_color || '',
           location: communityData.data.location || '',
           province: communityData.data.province || '',
           city: communityData.data.city || ''
         });
+        const urls = Array.isArray(communityData.data.socmed_urls)
+          ? communityData.data.socmed_urls
+          : [];
+        setSocmedUrls(urls.length > 0 ? urls : ['']);
         // Set preview URLs for existing images
         setLogoPreview(communityData.data.logo || '');
         setCoverPreview(communityData.data.cover || '');
@@ -121,6 +133,10 @@ function CommunityManagementInner() {
       formDataToSend.append('location', formData.location || '');
       formDataToSend.append('province', formData.province || '');
       formDataToSend.append('city', formData.city || '');
+      formDataToSend.append('main_color', formData.main_color || '');
+      formDataToSend.append('secondary_color', formData.secondary_color || '');
+      const cleanedSocmedUrls = socmedUrls.map(url => url.trim()).filter(Boolean);
+      formDataToSend.append('socmed_urls', JSON.stringify(cleanedSocmedUrls));
       
       // Add files if selected
       if (logoFile) {
@@ -364,6 +380,76 @@ function CommunityManagementInner() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="e.g., Metro Manila"
                 />
+              </div>
+
+              {/* Main Color */}
+              <div>
+                <label htmlFor="main_color" className="block text-sm font-medium text-gray-700 mb-2">
+                  Main Color
+                </label>
+                <input
+                  type="color"
+                  id="main_color"
+                  name="main_color"
+                  value={formData.main_color}
+                  onChange={handleInputChange}
+                  className="h-11 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Secondary Color */}
+              <div>
+                <label htmlFor="secondary_color" className="block text-sm font-medium text-gray-700 mb-2">
+                  Secondary Color
+                </label>
+                <input
+                  type="color"
+                  id="secondary_color"
+                  name="secondary_color"
+                  value={formData.secondary_color}
+                  onChange={handleInputChange}
+                  className="h-11 w-full border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Social Media URLs */}
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Social Media URLs
+                </label>
+                <div className="space-y-2">
+                  {socmedUrls.map((url, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="url"
+                        value={url}
+                        onChange={(event) => {
+                          const next = [...socmedUrls];
+                          next[index] = event.target.value;
+                          setSocmedUrls(next);
+                        }}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="https://facebook.com/yourpage"
+                      />
+                      {socmedUrls.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setSocmedUrls(prev => prev.filter((_, i) => i !== index))}
+                          className="px-3 py-2 text-sm text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSocmedUrls(prev => [...prev, ''])}
+                  className="mt-3 text-sm text-red-600 hover:text-red-700 backend-no-red"
+                >
+                  + Add another URL
+                </button>
               </div>
 
               {/* Logo Upload */}

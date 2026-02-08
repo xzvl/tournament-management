@@ -65,7 +65,19 @@ export async function GET(request: NextRequest) {
           second: '2-digit',
           hour12: false
         }).replace(', ', 'T').replace(/\//g, '-') :
-        tournament.tournament_date
+        tournament.tournament_date,
+      pre_register_cutoff: tournament.pre_register_cutoff ?
+        new Date(tournament.pre_register_cutoff).toLocaleString('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(', ', 'T').replace(/\//g, '-') :
+        tournament.pre_register_cutoff
     }));
 
     return NextResponse.json({
@@ -167,7 +179,19 @@ export async function POST(request: NextRequest) {
           second: '2-digit',
           hour12: false
         }).replace(', ', 'T').replace(/\//g, '-') :
-        newTournament.tournament_date
+        newTournament.tournament_date,
+      pre_register_cutoff: newTournament.pre_register_cutoff ?
+        new Date(newTournament.pre_register_cutoff).toLocaleString('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(', ', 'T').replace(/\//g, '-') :
+        newTournament.pre_register_cutoff
     };
 
     return NextResponse.json({
@@ -272,7 +296,19 @@ export async function PUT(request: NextRequest) {
           second: '2-digit',
           hour12: false
         }).replace(', ', 'T').replace(/\//g, '-') :
-        updatedTournament.tournament_date
+        updatedTournament.tournament_date,
+      pre_register_cutoff: updatedTournament.pre_register_cutoff ?
+        new Date(updatedTournament.pre_register_cutoff).toLocaleString('en-CA', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false
+        }).replace(', ', 'T').replace(/\//g, '-') :
+        updatedTournament.pre_register_cutoff
     };
 
     return NextResponse.json({

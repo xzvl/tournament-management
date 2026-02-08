@@ -20,6 +20,9 @@ export interface Community {
   short_name: string;
   logo?: string;
   cover?: string;
+  main_color?: string;
+  secondary_color?: string;
+  socmed_urls?: Record<string, string> | null;
   location?: string;
   province?: string;
   city?: string;

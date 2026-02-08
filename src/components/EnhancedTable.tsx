@@ -161,12 +161,12 @@ export function EnhancedTable<T extends Record<string, any>>({
     <div className="space-y-4">
       {/* Search and Actions Bar */}
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-        <div className="flex-1 max-w-md">
+        <div className="flex-1 w-full max-w-full sm:max-w-md">
           <div className="relative">
             <input
               type="text"
               placeholder={searchPlaceholder}
-              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              className="block w-full pl-10 pr-10 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -225,7 +225,7 @@ export function EnhancedTable<T extends Record<string, any>>({
 
       {/* Table */}
       <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-disable-menu-swipe="true">
           <table className="w-full">
             <thead className="bg-gray-50">
               <tr>
