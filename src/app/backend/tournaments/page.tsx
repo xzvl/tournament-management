@@ -21,6 +21,7 @@ interface Tournament {
   challonge_cover?: string;
   description?: string;
   tournament_date: string;
+  pre_register_cutoff?: string | null;
   active: boolean;
   total_stadium: number;
   assigned_judge_ids: string;
@@ -49,6 +50,7 @@ interface TournamentForm {
   challonge_cover: string;
   description: string;
   tournament_date: string;
+  pre_register_cutoff?: string;
   total_stadium: number;
   assigned_judge_ids: number[];
   active: boolean;
@@ -199,14 +201,19 @@ export default function TournamentsManagement() {
       let assignedJudgeIds: number[] = [];
       let judgeStadiumMap: { [key: string]: number } = {};
       try {
-        const parsed = JSON.parse(tournament.assigned_judge_ids);
+        const raw = tournament.assigned_judge_ids as any;
+        let parsed: any = raw;
+        if (typeof raw === 'string') {
+          parsed = JSON.parse(raw || '[]');
+        }
+
         // If it's an object (judge_id -> stadium_number mapping), extract the keys and store the mapping
-        if (typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
           assignedJudgeIds = Object.keys(parsed).map(id => parseInt(id));
-          judgeStadiumMap = parsed;
+          judgeStadiumMap = parsed as { [key: string]: number };
         } else if (Array.isArray(parsed)) {
           // If it's already an array, use it directly
-          assignedJudgeIds = parsed;
+          assignedJudgeIds = parsed.map((v: any) => Number(v)).filter(Boolean);
           judgeStadiumMap = {};
         }
       } catch (e) {
@@ -230,6 +237,17 @@ export default function TournamentsManagement() {
         const minutes = String(date.getMinutes()).padStart(2, '0');
         dateTimeValue = `${year}-${month}-${day}T${hours}:${minutes}`;
       }
+
+      let cutoffValue = '';
+      if (tournament.pre_register_cutoff) {
+        const cutoffDate = new Date(tournament.pre_register_cutoff);
+        const yearC = cutoffDate.getFullYear();
+        const monthC = String(cutoffDate.getMonth() + 1).padStart(2, '0');
+        const dayC = String(cutoffDate.getDate()).padStart(2, '0');
+        const hoursC = String(cutoffDate.getHours()).padStart(2, '0');
+        const minutesC = String(cutoffDate.getMinutes()).padStart(2, '0');
+        cutoffValue = `${yearC}-${monthC}-${dayC}T${hoursC}:${minutesC}`;
+      }
       
       setFormData({
         ch_id: tournament.ch_id,
@@ -240,6 +258,7 @@ export default function TournamentsManagement() {
         challonge_cover: tournament.challonge_cover || '',
         description: tournament.description || '',
         tournament_date: dateTimeValue,
+        pre_register_cutoff: cutoffValue,
         total_stadium: tournament.total_stadium,
         assigned_judge_ids: assignedJudgeIds,
         active: tournament.active
@@ -256,6 +275,7 @@ export default function TournamentsManagement() {
         challonge_cover: '',
         description: '',
         tournament_date: '',
+        pre_register_cutoff: '',
         total_stadium: 1,
         assigned_judge_ids: [],
         active: true
@@ -290,7 +310,7 @@ export default function TournamentsManagement() {
     setSuccess('');
 
     // Validate required fields
-    if (!formData.challonge_id || !formData.challonge_url || !formData.challonge_name || !formData.tournament_date) {
+      if (!formData.challonge_id || !formData.challonge_url || !formData.challonge_name || !formData.tournament_date) {
       setError('Please fill in all required fields');
       setIsSaving(false);
       return;
@@ -317,7 +337,8 @@ export default function TournamentsManagement() {
       
       const submitData = {
         ...formData,
-        assigned_judge_ids: assignedJudgesObject
+        assigned_judge_ids: assignedJudgesObject,
+        pre_register_cutoff: formData.pre_register_cutoff || null
       };
       
       const response = await fetch('/api/tournaments', {
@@ -403,7 +424,7 @@ export default function TournamentsManagement() {
         ...prev,
         [name]: parseInt(value) || 0
       }));
-    } else {
+      } else {
       // Handle Challonge ID - auto-generate URL
       if (name === 'challonge_id') {
         const newUrl = `https://challonge.com/${value}`;
@@ -415,7 +436,7 @@ export default function TournamentsManagement() {
       } else {
         setFormData(prev => ({
           ...prev,
-          [name]: value
+            [name]: value
         }));
       }
     }
@@ -859,6 +880,20 @@ export default function TournamentsManagement() {
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Pre-Register Cutoff
+                    </label>
+                    <input
+                      type="datetime-local"
+                      name="pre_register_cutoff"
+                      value={formData.pre_register_cutoff || ''}
+                      onChange={handleInputChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Total Stadiums
