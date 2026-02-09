@@ -128,15 +128,28 @@ export default function StadiumManagement() {
     const data = await response.json();
 
     if (data.success) {
-      // Parse assigned_judge_ids to get the mapping
+      // Parse assigned_judge_ids to get the mapping (handle string/object/array)
       let judgeStadiumMap: { [key: string]: number } = {};
       try {
-        judgeStadiumMap = JSON.parse(tournamentData.assigned_judge_ids);
+        const raw = tournamentData.assigned_judge_ids as any;
+        let parsed: any = raw;
+        if (typeof raw === 'string') {
+          parsed = JSON.parse(raw || '{}');
+        }
+
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          judgeStadiumMap = parsed as { [key: string]: number };
+        } else if (Array.isArray(parsed)) {
+          // If it's an array of judge IDs, convert to mapping with stadium 0 (unassigned)
+          parsed.forEach((j: any) => { judgeStadiumMap[String(j)] = 0; });
+        } else {
+          judgeStadiumMap = {};
+        }
       } catch (e) {
         console.error('Error parsing assigned_judge_ids:', e);
         judgeStadiumMap = {};
       }
-      
+
       // Get all judge IDs from the mapping
       const assignedJudgeIds = Object.keys(judgeStadiumMap).map(id => parseInt(id));
       
@@ -168,9 +181,22 @@ export default function StadiumManagement() {
     const stadiumsArray: Stadium[] = [];
     
     // Parse the judge-to-stadium mapping
+    // Parse the judge-to-stadium mapping (accept string/object/array)
     let judgeStadiumMap: { [key: string]: number } = {};
     try {
-      judgeStadiumMap = JSON.parse(tournamentData.assigned_judge_ids);
+      const raw = tournamentData.assigned_judge_ids as any;
+      let parsed: any = raw;
+      if (typeof raw === 'string') {
+        parsed = JSON.parse(raw || '{}');
+      }
+
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        judgeStadiumMap = parsed as { [key: string]: number };
+      } else if (Array.isArray(parsed)) {
+        parsed.forEach((j: any) => { judgeStadiumMap[String(j)] = 0; });
+      } else {
+        judgeStadiumMap = {};
+      }
     } catch (e) {
       console.error('Error parsing assigned_judge_ids:', e);
       judgeStadiumMap = {};
