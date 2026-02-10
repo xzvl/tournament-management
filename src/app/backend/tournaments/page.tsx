@@ -225,29 +225,9 @@ export default function TournamentsManagement() {
       setOriginalChallongeId(tournament.challonge_id);
       setOriginalJudgeStadiumMap(judgeStadiumMap);
       
-      // Format datetime for datetime-local input (YYYY-MM-DDTHH:mm)
-      let dateTimeValue = '';
-      if (tournament.tournament_date) {
-        const date = new Date(tournament.tournament_date);
-        // Format to YYYY-MM-DDTHH:mm for datetime-local input
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        dateTimeValue = `${year}-${month}-${day}T${hours}:${minutes}`;
-      }
-
-      let cutoffValue = '';
-      if (tournament.pre_register_cutoff) {
-        const cutoffDate = new Date(tournament.pre_register_cutoff);
-        const yearC = cutoffDate.getFullYear();
-        const monthC = String(cutoffDate.getMonth() + 1).padStart(2, '0');
-        const dayC = String(cutoffDate.getDate()).padStart(2, '0');
-        const hoursC = String(cutoffDate.getHours()).padStart(2, '0');
-        const minutesC = String(cutoffDate.getMinutes()).padStart(2, '0');
-        cutoffValue = `${yearC}-${monthC}-${dayC}T${hoursC}:${minutesC}`;
-      }
+      // Format datetimes for datetime-local input (YYYY-MM-DDTHH:mm) in Asia/Manila
+      const dateTimeValue = toManilaDateTimeLocal(tournament.tournament_date);
+      const cutoffValue = toManilaDateTimeLocal(tournament.pre_register_cutoff || undefined);
       
       setFormData({
         ch_id: tournament.ch_id,
@@ -338,7 +318,9 @@ export default function TournamentsManagement() {
       const submitData = {
         ...formData,
         assigned_judge_ids: assignedJudgesObject,
-        pre_register_cutoff: formData.pre_register_cutoff || null
+        // Convert inputs (interpreted as Manila time) to UTC ISO for timestamptz
+        tournament_date: localDateTimeManilaToUTCISOString(formData.tournament_date),
+        pre_register_cutoff: localDateTimeManilaToUTCISOString(formData.pre_register_cutoff) || null
       };
       
       const response = await fetch('/api/tournaments', {
@@ -555,8 +537,49 @@ export default function TournamentsManagement() {
     }
   };
 
+  // Convert any ISO date string to a datetime-local value in Asia/Manila (+08:00)
+  const toManilaDateTimeLocal = (dateString?: string | null) => {
+    if (!dateString) return '';
+    try {
+      const d = new Date(dateString);
+      const fmt = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+      const parts = fmt.formatToParts(d);
+      const map: { [key: string]: string } = {};
+      parts.forEach(p => { if (p.type !== 'literal') map[p.type] = p.value; });
+      return `${map.year}-${map.month}-${map.day}T${map.hour}:${map.minute}`;
+    } catch (e) {
+      return '';
+    }
+  };
+
+  // Interpret a datetime-local string ("YYYY-MM-DDTHH:mm") as Asia/Manila local time
+  // and convert to a UTC ISO string (suitable for timestamptz storage).
+  const localDateTimeManilaToUTCISOString = (localDateTime?: string | null) => {
+    if (!localDateTime) return null;
+    try {
+      const [datePart, timePart] = localDateTime.split('T');
+      if (!datePart || !timePart) return null;
+      const [year, month, day] = datePart.split('-').map(Number);
+      const [hour, minute] = timePart.split(':').map(Number);
+      // Manila is UTC+8 -> UTC = local - 8 hours
+      const utcMs = Date.UTC(year, month - 1, day, hour - 8, minute, 0);
+      return new Date(utcMs).toISOString();
+    } catch (e) {
+      return null;
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
+      timeZone: 'Asia/Manila',
       year: 'numeric',
       month: 'short',
       day: 'numeric',
