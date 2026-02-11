@@ -187,16 +187,24 @@ export default function JudgesManagement() {
     if (judge) {
       let communityIds: number[] = [];
       try {
-        // Parse JSON array or handle comma-separated format
-        if (judge.community_ids.startsWith('[')) {
-          communityIds = JSON.parse(judge.community_ids);
+        // Ensure judge.community_ids is a string before processing
+        if (typeof judge.community_ids === 'string') {
+          // Parse JSON array or handle comma-separated format
+          if (judge.community_ids.startsWith('[')) {
+            communityIds = JSON.parse(judge.community_ids);
+          } else {
+            communityIds = judge.community_ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+          }
+        } else if (Array.isArray(judge.community_ids)) {
+          // If it's already an array, use it directly
+          communityIds = judge.community_ids;
         } else {
-          communityIds = judge.community_ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+          console.warn('Unexpected type for community_ids:', typeof judge.community_ids);
         }
       } catch (e) {
         console.error('Error parsing community_ids:', e);
-        // Fallback to treating as comma-separated
-        communityIds = judge.community_ids.split(',').map(id => parseInt(id.trim())).filter(id => !isNaN(id));
+        // Fallback to treating as an empty array
+        communityIds = [];
       }
       
       setFormData({
