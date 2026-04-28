@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 interface User {
@@ -37,7 +37,7 @@ interface PasswordData {
   confirm_password: string;
 }
 
-export default function SettingsPage() {
+function SettingsPageContent() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -651,5 +651,21 @@ export default function SettingsPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+function SettingsLoading() {
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+      <div className="animate-spin backend-spinner rounded-full h-12 w-12 border-b-2 border-red-600"></div>
+    </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsLoading />}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }

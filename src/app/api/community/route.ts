@@ -218,7 +218,7 @@ export async function POST(request: NextRequest) {
         cover: coverUrl,
         main_color,
         secondary_color,
-        socmed_urls: socmed_urls,
+        socmed_urls: socmed_urls ?? undefined,
         location,
         province,
         city,
@@ -363,7 +363,7 @@ export async function PUT(request: NextRequest) {
         cover: coverUrl,
         main_color,
         secondary_color,
-        socmed_urls: socmed_urls,
+        socmed_urls: socmed_urls ?? undefined,
         location,
         province,
         city
