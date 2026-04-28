@@ -473,7 +473,15 @@ export default function TournamentsManagement() {
 
       if (!data.success) {
         console.error('Challonge sync error:', data.error);
-        setError(`Challonge sync failed: ${data.error || 'Unknown error'}`);
+        const details = typeof data.details?.raw === 'string'
+          ? data.details.raw
+          : Array.isArray(data.details?.errors)
+            ? data.details.errors
+                .map((item: any) => item?.detail || item?.title || item?.message)
+                .filter(Boolean)
+                .join(', ')
+            : '';
+        setError(`Challonge sync failed: ${details || data.error || 'Unknown error'}`);
       } else {
         console.log('Successfully synced to Challonge');
       }
@@ -772,7 +780,7 @@ export default function TournamentsManagement() {
                       </label>
                     </div>
                     <p className="text-xs text-red-800 mt-3 leading-relaxed">
-                      We are using Challonge API v1. Due to its limited access, the setup is currently configured to <strong>Group Stage: Round Robin</strong>, with tie Breakers Set to <strong>Wins vs Tied Participants &gt; Game/Set Wins &gt; Points Scored</strong>. Please configure this manually in the Challonge settings.
+                      We are using the <strong>Challonge API v2.1</strong>. Please configure the <strong>Tie Breaks</strong> settings manually in the Challonge settings in this order: <strong>Points Difference &gt; Points Scored &gt; Median-Buchholz System</strong>.
                     </p>
                   </div>
                 </div>

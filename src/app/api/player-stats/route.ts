@@ -45,12 +45,12 @@ const generatePassword = (length = 10) => {
   return output.join('');
 };
 
-const resolveUniqueUsername = async (base: string) => {
+const resolveUniqueUsername = async (db: any, base: string) => {
   let candidate = base;
   let suffix = 1;
 
   while (suffix < 100) {
-    const existing = await prisma.player.findFirst({
+    const existing = await db.player.findFirst({
       where: { username: candidate },
       select: { player_id: true }
     });
@@ -76,9 +76,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    try {
-      await prisma.$transaction(async (tx) => {
-        for (const player of players) {
+    await prisma.$transaction(async (tx) => {
+      for (const player of players) {
         const {
           playerName,
           spin,
@@ -105,7 +104,7 @@ export async function POST(request: NextRequest) {
           playerId = existing.player_id;
         } else {
           const baseUsername = normalizeUsername(playerName);
-          const username = await resolveUniqueUsername(baseUsername);
+          const username = await resolveUniqueUsername(tx, baseUsername);
           const password = generatePassword(10);
           const name = normalizeName(playerName);
 
@@ -141,20 +140,14 @@ export async function POST(request: NextRequest) {
           }
         });
       }
-      });
+    });
 
-      return NextResponse.json({ success: true });
-    } catch (error) {
-      console.error('Player stats save error:', error);
-      return NextResponse.json(
-        { success: false, error: 'Failed to save player stats' },
-        { status: 500 }
-      );
-    }
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Player stats API error:', error);
+    const detail = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json(
-      { success: false, error: 'Server error' },
+      { success: false, error: 'Failed to save player stats', detail },
       { status: 500 }
     );
   }

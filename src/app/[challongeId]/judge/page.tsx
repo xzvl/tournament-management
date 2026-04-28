@@ -526,7 +526,7 @@ export default function JudgePage() {
   }, []);
 
   const createMatchAttachment = useCallback(async (payload: { description: string; file?: File | null }) => {
-    if (!apiKey || !challongeId || !selectedMatch) return;
+    if (!apiKey || !challongeId || !selectedMatch) return false;
     const formData = new FormData();
     formData.append('challongeId', challongeId);
     formData.append('matchId', String(selectedMatch.id));
@@ -543,8 +543,11 @@ export default function JudgePage() {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(errorText || 'Failed to create attachment');
+      console.warn('Attachment upload skipped:', errorText || 'Failed to create attachment');
+      return false;
     }
+
+    return true;
   }, [apiKey, challongeId, selectedMatch]);
 
   const savePlayerStats = useCallback(async (payload: {

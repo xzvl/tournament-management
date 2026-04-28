@@ -448,7 +448,12 @@ export default function PlayerPage() {
         recentMatches.map(async (match) => {
           try {
             const response = await fetch(
-              `/api/challonge/attachments?challongeId=${challongeId}&matchId=${match.id}&apiKey=${apiKey}`
+              `/api/challonge/attachments?challongeId=${challongeId}&matchId=${match.id}`,
+              {
+                headers: {
+                  'x-challonge-api-key': apiKey
+                }
+              }
             );
             if (!response.ok) return [match.id, [], []] as const;
             const data = await response.json();

@@ -56,10 +56,22 @@ function buildTournamentAttributes(
 ) {
   const attributes: Record<string, unknown> = {
     name: tournament.challonge_name,
+    // Final stage: Single Elimination
     tournament_type: 'single elimination',
     description: tournament.description || '',
+    // Two-Stage format: groups feed into final stage
+    group_stage_enabled: true,
+    group_stage_options: {
+      // Group Stage: Swiss, 32 participants per group, 16 advance
+      stage_type: 'swiss',
+      group_size: 32,
+      participant_count_to_advance_per_group: 16,
+      // Tie break order: Points Difference → Points Scored → Median-Buchholz
+      tie_break_order: ['points_difference', 'points_scored', 'median_buchholz']
+    },
     match_options: {
       accept_attachments: true,
+      // Final Stage: break ties with placement matches up to 4th place
       consolation_matches_target_rank: 4
     }
   };

@@ -17,9 +17,71 @@ function toNumericId(value: unknown): number | string | null {
   return Number.isFinite(numeric) ? numeric : String(value);
 }
 
-function getRelationshipId(matchAttributes: any, key: 'player1' | 'player2'): number | string | null {
-  const relationshipId = matchAttributes?.relationships?.[key]?.data?.id;
-  return toNumericId(relationshipId);
+function getRelationshipId(matchItem: any, key: 'player1' | 'player2'): number | string | null {
+  const relationshipId = matchItem?.relationships?.[key]?.data?.id;
+  if (relationshipId !== undefined && relationshipId !== null) {
+    return toNumericId(relationshipId);
+  }
+
+  // Some v2.1 match records omit player relationships and only include
+  // participant ids under points_by_participant.
+  const points = Array.isArray(matchItem?.attributes?.points_by_participant)
+    ? matchItem.attributes.points_by_participant
+    : [];
+  const index = key === 'player1' ? 0 : 1;
+  return toNumericId(points[index]?.participant_id);
+}
+
+function getMatchGroupId(matchItem: any): number | string | null {
+  const relationshipGroupId = matchItem?.relationships?.group?.data?.id;
+  if (relationshipGroupId !== undefined && relationshipGroupId !== null) {
+    return toNumericId(relationshipGroupId);
+  }
+
+  return toNumericId(matchItem?.attributes?.group_id);
+}
+
+function normalizeIdArray(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isFinite(item));
+}
+
+async function fetchParticipantDetail(
+  challongeId: string,
+  participantId: number | string,
+  apiKey: string
+) {
+  const response = await fetch(
+    `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/participants/${encodeURIComponent(String(participantId))}.json`,
+    {
+      method: 'GET',
+      headers: getChallongeV21Headers(apiKey)
+    }
+  );
+
+  if (!response.ok) {
+    return null;
+  }
+
+  const payload = await response.json();
+  const item = payload?.data;
+  const attributes = item?.attributes ?? {};
+  const normalizedId = toNumericId(item?.id ?? participantId);
+
+  return {
+    participant: {
+      id: normalizedId,
+      name: attributes?.name ?? 'Unknown Player',
+      display_name: attributes?.name ?? 'Unknown Player',
+      username: attributes?.username ?? null,
+      group_id: toNumericId(attributes?.group_id),
+      final_rank: attributes?.final_rank ?? null,
+      group_player_ids: normalizeIdArray(attributes?.group_player_ids)
+    }
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -56,11 +118,94 @@ export async function GET(request: NextRequest) {
     const matchesPayload = await matchesResponse.json();
     const matchesData = Array.isArray(matchesPayload?.data) ? matchesPayload.data : [];
 
+    // Also fetch participants and normalize to maintain existing UI contracts.
+    const participantsResponse = await fetch(
+      `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/participants.json`,
+      {
+        method: 'GET',
+        headers: getChallongeV21Headers(apiKey)
+      }
+    );
+
+    let participants = [];
+    const participantGroupById = new Map<number | string, number | string | null>();
+    if (participantsResponse.ok) {
+      const participantsPayload = await participantsResponse.json();
+      const participantsData = Array.isArray(participantsPayload?.data)
+        ? participantsPayload.data
+        : [];
+
+      participants = participantsData.map((item: any) => {
+        const attributes = item?.attributes ?? {};
+        const participantId = toNumericId(item?.id);
+        const participantGroupId = toNumericId(attributes?.group_id);
+        const groupPlayerIds = normalizeIdArray(attributes?.group_player_ids);
+
+        if (participantId !== null) {
+          participantGroupById.set(participantId, participantGroupId);
+        }
+
+        return {
+          participant: {
+            id: participantId,
+            name: attributes?.name ?? 'Unknown Player',
+            display_name: attributes?.name ?? 'Unknown Player',
+            username: attributes?.username ?? null,
+            group_id: participantGroupId,
+            final_rank: attributes?.final_rank ?? null,
+            group_player_ids: groupPlayerIds
+          }
+        };
+      });
+    }
+
+    const matchParticipantIds = new Set<number | string>();
+    matchesData.forEach((item: any) => {
+      const player1Id = getRelationshipId(item, 'player1');
+      const player2Id = getRelationshipId(item, 'player2');
+      if (player1Id !== null) matchParticipantIds.add(player1Id);
+      if (player2Id !== null) matchParticipantIds.add(player2Id);
+    });
+
+    const missingParticipantIds = Array.from(matchParticipantIds).filter(
+      (id) => !participantGroupById.has(id)
+    );
+
+    if (missingParticipantIds.length > 0) {
+      const fetchedParticipants = await Promise.all(
+        missingParticipantIds.map((id) => fetchParticipantDetail(challongeId, id, apiKey))
+      );
+
+      fetchedParticipants.forEach((participantEntry) => {
+        if (!participantEntry) return;
+        participants.push(participantEntry);
+
+        const p = participantEntry.participant;
+        if (p.id !== null) {
+          participantGroupById.set(p.id, p.group_id ?? null);
+        }
+      });
+    }
+
     // Normalize v2.1 JSON:API response to the existing v1-like shape used by UI code.
     const matches = matchesData.map((item: any) => {
       const attributes = item?.attributes ?? {};
-      const player1Id = getRelationshipId(attributes, 'player1');
-      const player2Id = getRelationshipId(attributes, 'player2');
+      const hasExplicitPlayerRelationships = Boolean(
+        item?.relationships?.player1?.data?.id && item?.relationships?.player2?.data?.id
+      );
+      const player1Id = getRelationshipId(item, 'player1');
+      const player2Id = getRelationshipId(item, 'player2');
+
+      // Some v2.1 responses do not include explicit group links for matches.
+      // When omitted, infer group_id if both players are in the same participant group.
+      let groupId = getMatchGroupId(item);
+      if (groupId === null && hasExplicitPlayerRelationships && player1Id !== null && player2Id !== null) {
+        const player1Group = participantGroupById.get(player1Id) ?? null;
+        const player2Group = participantGroupById.get(player2Id) ?? null;
+        if (player1Group !== null && player1Group === player2Group) {
+          groupId = player1Group;
+        }
+      }
 
       return {
         match: {
@@ -74,43 +219,11 @@ export async function GET(request: NextRequest) {
             : '',
           state: attributes?.state ?? 'pending',
           round: attributes?.round ?? null,
-          group_id: null,
+          group_id: groupId,
           identifier: attributes?.identifier ?? null
         }
       };
     });
-
-    // Also fetch participants and normalize to maintain existing UI contracts.
-    const participantsResponse = await fetch(
-      `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/participants.json`,
-      {
-        method: 'GET',
-        headers: getChallongeV21Headers(apiKey)
-      }
-    );
-
-    let participants = [];
-    if (participantsResponse.ok) {
-      const participantsPayload = await participantsResponse.json();
-      const participantsData = Array.isArray(participantsPayload?.data)
-        ? participantsPayload.data
-        : [];
-
-      participants = participantsData.map((item: any) => {
-        const attributes = item?.attributes ?? {};
-        return {
-          participant: {
-            id: toNumericId(item?.id),
-            name: attributes?.name ?? 'Unknown Player',
-            display_name: attributes?.name ?? 'Unknown Player',
-            username: attributes?.username ?? null,
-            group_id: attributes?.group_id ?? null,
-            final_rank: attributes?.final_rank ?? null,
-            group_player_ids: []
-          }
-        };
-      });
-    }
 
     return NextResponse.json({
       success: true,
@@ -157,9 +270,10 @@ export async function POST(request: NextRequest) {
     }
 
     const showMatchPayload = await showMatchResponse.json();
-    const matchAttributes = showMatchPayload?.data?.attributes ?? {};
-    const player1Id = getRelationshipId(matchAttributes, 'player1');
-    const player2Id = getRelationshipId(matchAttributes, 'player2');
+    const showMatchData = showMatchPayload?.data ?? {};
+    const matchAttributes = showMatchData?.attributes ?? {};
+    const player1Id = getRelationshipId(showMatchData, 'player1');
+    const player2Id = getRelationshipId(showMatchData, 'player2');
 
     if (!player1Id || !player2Id) {
       return NextResponse.json({
@@ -220,9 +334,11 @@ export async function POST(request: NextRequest) {
     }
 
     const updatedPayload = await updateResponse.json();
-    const updatedAttributes = updatedPayload?.data?.attributes ?? {};
-    const updatedPlayer1Id = getRelationshipId(updatedAttributes, 'player1') ?? player1Id;
-    const updatedPlayer2Id = getRelationshipId(updatedAttributes, 'player2') ?? player2Id;
+    const updatedData = updatedPayload?.data ?? {};
+    const updatedAttributes = updatedData?.attributes ?? {};
+    const updatedPlayer1Id = getRelationshipId(updatedData, 'player1') ?? player1Id;
+    const updatedPlayer2Id = getRelationshipId(updatedData, 'player2') ?? player2Id;
+    const updatedGroupId = getMatchGroupId(updatedData);
 
     const match = {
       match: {
@@ -236,7 +352,7 @@ export async function POST(request: NextRequest) {
           : String(scoresCsv ?? ''),
         state: updatedAttributes?.state ?? 'complete',
         round: updatedAttributes?.round ?? null,
-        group_id: null,
+        group_id: updatedGroupId,
         identifier: updatedAttributes?.identifier ?? null
       }
     };
