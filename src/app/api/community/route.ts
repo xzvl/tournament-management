@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import prisma from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -219,7 +218,7 @@ export async function POST(request: NextRequest) {
         cover: coverUrl,
         main_color,
         secondary_color,
-        socmed_urls: socmed_urls !== null ? socmed_urls : Prisma.JsonNull,
+        socmed_urls: socmed_urls,
         location,
         province,
         city,
@@ -364,7 +363,7 @@ export async function PUT(request: NextRequest) {
         cover: coverUrl,
         main_color,
         secondary_color,
-        socmed_urls: socmed_urls !== null ? socmed_urls : Prisma.JsonNull,
+        socmed_urls: socmed_urls,
         location,
         province,
         city

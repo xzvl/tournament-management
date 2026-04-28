@@ -1,5 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const CHALLONGE_V21_BASE_URL = 'https://api.challonge.com/v2.1';
+
+function getChallongeV21Headers(apiKey: string): HeadersInit {
+  return {
+    'Authorization-Type': 'v1',
+    'Authorization': apiKey,
+    'Accept': 'application/json'
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -15,7 +25,14 @@ export async function GET(request: NextRequest) {
     }
 
     const attachmentsResponse = await fetch(
-      `https://api.challonge.com/v1/tournaments/${challongeId}/matches/${matchId}/attachments.json?api_key=${apiKey}`
+      `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/matches/${encodeURIComponent(matchId)}/attachments.json`,
+      {
+        method: 'GET',
+        headers: {
+          ...getChallongeV21Headers(apiKey),
+          'Content-Type': 'application/vnd.api+json'
+        }
+      }
     );
 
     if (!attachmentsResponse.ok) {
@@ -27,7 +44,21 @@ export async function GET(request: NextRequest) {
       }, { status: attachmentsResponse.status });
     }
 
-    const attachments = await attachmentsResponse.json();
+    const responseData = await attachmentsResponse.json();
+    const attachmentsData = Array.isArray(responseData?.data) ? responseData.data : [];
+
+    // Normalize v2.1 JSON:API response to existing v1-like shape used by UI.
+    const attachments = attachmentsData.map((item: any) => {
+      const attributes = item?.attributes ?? {};
+      return {
+        match_attachment: {
+          id: item?.id,
+          url: attributes?.url ?? null,
+          asset_url: attributes?.url ?? null,
+          description: attributes?.description ?? ''
+        }
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -68,9 +99,10 @@ export async function POST(request: NextRequest) {
     }
 
     const attachmentsResponse = await fetch(
-      `https://api.challonge.com/v1/tournaments/${challongeId}/matches/${matchId}/attachments.json?api_key=${apiKey}`,
+      `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/matches/${encodeURIComponent(matchId)}/attachments.json`,
       {
         method: 'POST',
+        headers: getChallongeV21Headers(apiKey),
         body: payload
       }
     );
@@ -84,7 +116,17 @@ export async function POST(request: NextRequest) {
       }, { status: attachmentsResponse.status });
     }
 
-    const attachment = await attachmentsResponse.json();
+    const responseData = await attachmentsResponse.json();
+    const attributes = responseData?.data?.attributes ?? {};
+
+    const attachment = {
+      match_attachment: {
+        id: responseData?.data?.id,
+        url: attributes?.url ?? null,
+        asset_url: attributes?.url ?? null,
+        description: attributes?.description ?? description
+      }
+    };
 
     return NextResponse.json({
       success: true,

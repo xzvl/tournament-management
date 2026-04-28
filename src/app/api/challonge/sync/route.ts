@@ -2,26 +2,96 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 
+const CHALLONGE_V21_BASE_URL = 'https://api.challonge.com/v2.1';
+
+function getChallongeV21Headers(apiKey: string): HeadersInit {
+  return {
+    'Authorization-Type': 'v1',
+    'Authorization': apiKey,
+    'Content-Type': 'application/vnd.api+json',
+    'Accept': 'application/json'
+  };
+}
+
+async function readJsonResponse(response: Response): Promise<any> {
+  const responseText = await response.text();
+  if (!responseText) return null;
+
+  try {
+    return JSON.parse(responseText);
+  } catch {
+    return { raw: responseText };
+  }
+}
+
+function getChallongeErrorMessage(responseData: any, status: number): string {
+  if (Array.isArray(responseData?.errors)) {
+    const messages = responseData.errors
+      .map((err: any) => err?.detail || err?.title || err?.message)
+      .filter((msg: unknown): msg is string => typeof msg === 'string' && msg.length > 0);
+
+    if (messages.length > 0) {
+      return messages.join(', ');
+    }
+  }
+
+  if (typeof responseData?.errors === 'string') {
+    return responseData.errors;
+  }
+
+  if (typeof responseData?.message === 'string') {
+    return responseData.message;
+  }
+
+  if (typeof responseData?.error === 'string') {
+    return responseData.error;
+  }
+
+  return `Challonge API error: ${status}`;
+}
+
+function buildTournamentAttributes(
+  tournament: any,
+  options: { includeStartsAt: boolean; includeUrl: boolean }
+) {
+  const attributes: Record<string, unknown> = {
+    name: tournament.challonge_name,
+    tournament_type: 'single elimination',
+    description: tournament.description || '',
+    match_options: {
+      accept_attachments: true,
+      consolation_matches_target_rank: 4
+    }
+  };
+
+  if (options.includeUrl) {
+    attributes.url = tournament.challonge_id;
+  }
+
+  if (options.includeStartsAt) {
+    const startsAt = tournament.tournament_date
+      ? new Date(tournament.tournament_date)
+      : new Date(Date.now() + 24 * 60 * 60 * 1000);
+    attributes.starts_at = startsAt.toISOString();
+  }
+
+  return attributes;
+}
+
 async function checkTournamentExistsOnChallonge(
   challonge_id: string,
-  challonge_username: string,
   api_key: string
 ) {
-  const challongeUrl = `https://api.challonge.com/v1/tournaments/${challonge_id}.json`;
-  const auth = Buffer.from(`${challonge_username}:${api_key}`).toString('base64');
+  const challongeUrl = `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challonge_id)}.json`;
 
   try {
     const response = await fetch(challongeUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json'
-      }
+      headers: getChallongeV21Headers(api_key)
     });
 
     if (response.ok) {
-      const responseText = await response.text();
-      const responseData = JSON.parse(responseText);
+      const responseData = await readJsonResponse(response);
       console.log('Tournament exists on Challonge:', { tournament_id: challonge_id });
       return { exists: true, data: responseData };
     } else {
@@ -36,43 +106,16 @@ async function checkTournamentExistsOnChallonge(
 
 async function createTournamentOnChallonge(
   tournament: any,
-  challonge_username: string,
   api_key: string
 ) {
-  const startDate = tournament.tournament_date 
-    ? new Date(tournament.tournament_date)
-    : new Date(Date.now() + 24 * 60 * 60 * 1000);
-
   const tournamentData = {
-    tournament: {
-      name: tournament.challonge_name,
-      url: tournament.challonge_id,
-      tournament_type: 'single elimination',
-      game_id: 337197,
-      description: tournament.description || '',
-      start_at: startDate.toISOString(),
-      group_stages_enabled: true,
-      tie_breaks: [
-        'points difference',
-        'points scored',
-        'median buchholz'
-      ],
-      group_stage_type: 'swiss',
-      swiss_rounds: 4,
-      show_rounds: true,
-      accept_attachments: true,
-      ranked_by: 'swiss system points',
-      allow_participant_match_reporting: true,
-      pts_for_match_win: '1.0',
-      pts_for_match_tie: '0.5',
-      pts_for_bye: '1.0',
-      consolation_matches_target_rank: 4,
-      hold_third_place_match: true
+    data: {
+      type: 'tournament',
+      attributes: buildTournamentAttributes(tournament, { includeStartsAt: true, includeUrl: true })
     }
   };
 
-  const challongeUrl = `https://api.challonge.com/v1/tournaments.json`;
-  const auth = Buffer.from(`${challonge_username}:${api_key}`).toString('base64');
+  const challongeUrl = `${CHALLONGE_V21_BASE_URL}/tournaments.json`;
 
   console.log('Creating tournament on Challonge:', { 
     challonge_url: tournament.challonge_url,
@@ -83,28 +126,16 @@ async function createTournamentOnChallonge(
 
   const response = await fetch(challongeUrl, {
     method: 'POST',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
+    headers: getChallongeV21Headers(api_key),
     body: JSON.stringify(tournamentData)
   });
 
-  const responseText = await response.text();
-  let responseData;
-
-  try {
-    responseData = JSON.parse(responseText);
-  } catch {
-    responseData = { raw: responseText };
-  }
+  const responseData = await readJsonResponse(response);
 
   console.log('Challonge API response (create):', { 
     status: response.status, 
     statusText: response.statusText,
-    data: responseData,
-    body: responseText 
+    data: responseData
   });
 
   return { response, responseData };
@@ -112,19 +143,14 @@ async function createTournamentOnChallonge(
 
 async function getTournamentStatusFromChallonge(
   tournamentId: string,
-  challonge_username: string,
   api_key: string
 ) {
-  const challongeUrl = `https://api.challonge.com/v1/tournaments/${tournamentId}.json`;
-  const auth = Buffer.from(`${challonge_username}:${api_key}`).toString('base64');
+  const challongeUrl = `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(tournamentId)}.json`;
 
   try {
     const response = await fetch(challongeUrl, {
       method: 'GET',
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Accept': 'application/json'
-      }
+      headers: getChallongeV21Headers(api_key)
     });
 
     if (!response.ok) {
@@ -132,13 +158,10 @@ async function getTournamentStatusFromChallonge(
       return { hasStarted: false };
     }
 
-    const responseText = await response.text();
-    const responseData = JSON.parse(responseText);
-    
-    // Tournament states: signup, underway, verified, complete
-    // If state is not 'signup', it means the tournament has started
-    const state = responseData?.tournament?.state;
-    const hasStarted = state && state !== 'signup';
+    const responseData = await readJsonResponse(response);
+
+    const state = responseData?.data?.attributes?.state;
+    const hasStarted = typeof state === 'string' && !['signup', 'pending', 'checking_in', 'checked_in'].includes(state);
     
     console.log('Tournament status:', { tournament_id: tournamentId, state, hasStarted });
     
@@ -151,7 +174,6 @@ async function getTournamentStatusFromChallonge(
 
 async function updateTournamentOnChallonge(
   tournament: any,
-  challonge_username: string,
   api_key: string,
   oldChallongeId: string
 ) {
@@ -159,33 +181,25 @@ async function updateTournamentOnChallonge(
   const tournamentIdToUse = oldChallongeId || tournament.challonge_id;
 
   // Check if tournament has started
-  const statusCheck = await getTournamentStatusFromChallonge(tournamentIdToUse, challonge_username, api_key);
-  
-  // Only update name and description
-  const updateData: any = {
-    tournament: {
-      name: tournament.challonge_name,
-      description: tournament.description || ''
+  const statusCheck = await getTournamentStatusFromChallonge(tournamentIdToUse, api_key);
+
+  const includeUrl = Boolean(oldChallongeId && oldChallongeId !== tournament.challonge_id);
+
+  const updateData = {
+    data: {
+      type: 'tournament',
+      attributes: buildTournamentAttributes(tournament, {
+        includeStartsAt: !statusCheck.hasStarted,
+        includeUrl
+      })
     }
   };
 
-  // Only include start_at if tournament hasn't started
-  if (!statusCheck.hasStarted) {
-    const startDate = tournament.tournament_date 
-      ? new Date(tournament.tournament_date)
-      : new Date();
-    updateData.tournament['start_at'] = startDate.toISOString();
-  } else {
-    console.log('Tournament has started, skipping start_at update');
+  if (statusCheck.hasStarted) {
+    console.log('Tournament has started, skipping starts_at update');
   }
 
-  // If the challonge_id has changed, also update the url
-  if (oldChallongeId && oldChallongeId !== tournament.challonge_id) {
-    updateData.tournament['url'] = tournament.challonge_id;
-  }
-
-  const challongeUrl = `https://api.challonge.com/v1/tournaments/${tournamentIdToUse}.json`;
-  const auth = Buffer.from(`${challonge_username}:${api_key}`).toString('base64');
+  const challongeUrl = `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(tournamentIdToUse)}.json`;
 
   console.log('Updating tournament on Challonge:', { 
     tournament_id: tournamentIdToUse,
@@ -195,28 +209,16 @@ async function updateTournamentOnChallonge(
 
   const response = await fetch(challongeUrl, {
     method: 'PUT',
-    headers: {
-      'Authorization': `Basic ${auth}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    },
+    headers: getChallongeV21Headers(api_key),
     body: JSON.stringify(updateData)
   });
 
-  const responseText = await response.text();
-  let responseData;
-
-  try {
-    responseData = JSON.parse(responseText);
-  } catch {
-    responseData = { raw: responseText };
-  }
+  const responseData = await readJsonResponse(response);
 
   console.log('Challonge API response (update):', { 
     status: response.status, 
     statusText: response.statusText,
-    data: responseData,
-    body: responseText 
+    data: responseData
   });
 
   return { response, responseData };
@@ -245,7 +247,7 @@ export async function POST(request: NextRequest) {
     // Get the user's Challonge credentials
     const user = await prisma.user.findUnique({
       where: { user_id },
-      select: { challonge_username: true, api_key: true }
+      select: { api_key: true }
     });
 
     if (!user?.api_key) {
@@ -255,14 +257,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    if (!user.challonge_username) {
-      return NextResponse.json({
-        success: false,
-        error: 'User does not have a Challonge username configured'
-      }, { status: 400 });
-    }
-
-    const { challonge_username, api_key } = user;
+    const { api_key } = user;
 
     try {
       let result;
@@ -273,43 +268,28 @@ export async function POST(request: NextRequest) {
 
       if (isUpdate && oldChallongeIdValue) {
         // Update existing tournament on Challonge using the old challonge_id
-        result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, oldChallongeIdValue);
+        result = await updateTournamentOnChallonge(tournament, api_key, oldChallongeIdValue);
       } else if (isUpdate && tournament.challonge_id) {
         // Fallback: If no oldChallongeId but it's an update, use current challonge_id
-        result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, tournament.challonge_id);
+        result = await updateTournamentOnChallonge(tournament, api_key, tournament.challonge_id);
       } else {
         // Creating new tournament - first check if it already exists on Challonge
-        const existsResult = await checkTournamentExistsOnChallonge(tournament.challonge_id, challonge_username, api_key);
+        const existsResult = await checkTournamentExistsOnChallonge(tournament.challonge_id, api_key);
         
         if (existsResult.exists) {
           // Tournament already exists, update it instead of creating
           console.log('Tournament already exists on Challonge, updating instead of creating');
-          result = await updateTournamentOnChallonge(tournament, challonge_username, api_key, tournament.challonge_id);
+          result = await updateTournamentOnChallonge(tournament, api_key, tournament.challonge_id);
         } else {
           // Tournament doesn't exist, create it
-          result = await createTournamentOnChallonge(tournament, challonge_username, api_key);
+          result = await createTournamentOnChallonge(tournament, api_key);
         }
       }
 
       const { response, responseData } = result;
 
       if (!response.ok) {
-        // Handle different API error response formats
-        let errorMessage = `Challonge API error: ${response.status}`;
-        
-        if (responseData.errors) {
-          if (Array.isArray(responseData.errors)) {
-            errorMessage = responseData.errors.join(', ');
-          } else if (typeof responseData.errors === 'string') {
-            errorMessage = responseData.errors;
-          } else if (typeof responseData.errors === 'object') {
-            errorMessage = JSON.stringify(responseData.errors);
-          }
-        } else if (responseData.message) {
-          errorMessage = responseData.message;
-        } else if (responseData.error) {
-          errorMessage = responseData.error;
-        }
+        const errorMessage = getChallongeErrorMessage(responseData, response.status);
 
         console.error('Challonge API error:', { status: response.status, data: responseData });
         return NextResponse.json({

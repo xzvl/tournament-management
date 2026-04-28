@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth';
 
 // Explicit selects (kept in-sync with Prisma schema)
@@ -90,7 +89,7 @@ export async function POST(request: NextRequest) {
         province: province || null,
         to_id: to_id || null,
         main_color: main_color || null,
-        socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
+        socmed_urls: socmed_urls !== undefined ? socmed_urls : null
       },
       select: {
         community_id: true,
@@ -191,7 +190,7 @@ export async function PUT(request: NextRequest) {
         province: province || null,
         to_id: to_id || null,
         main_color: main_color || null,
-        socmed_urls: socmed_urls !== undefined && socmed_urls !== null ? socmed_urls : Prisma.JsonNull
+        socmed_urls: socmed_urls !== undefined ? socmed_urls : null
       },
       select: {
         community_id: true,

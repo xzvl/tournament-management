@@ -34,17 +34,22 @@ export default function BackendLogin() {
         body: JSON.stringify(formData),
       });
 
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      const isJsonResponse = contentType.includes('application/json');
+      const data = isJsonResponse ? await response.json() : null;
 
-      if (data.success) {
+      if (response.ok && data?.success) {
         // Store auth token/session
         localStorage.setItem('authToken', data.token);
         // Redirect to backend dashboard
         router.push('/backend');
       } else {
-        setError(data.error || 'Login failed');
+        const fallbackMessage = response.status === 404
+          ? 'Login API endpoint not found. Please restart the server.'
+          : `Login failed (${response.status})`;
+        setError(data?.error || fallbackMessage);
       }
-    } catch (error) {
+    } catch {
       setError('Network error. Please try again.');
     } finally {
       setIsLoading(false);

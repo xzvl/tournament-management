@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Prisma } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '@/lib/prisma';
@@ -20,7 +19,7 @@ export async function POST(request: NextRequest) {
 
     // Test database connection first
     try {
-      await prisma.$queryRaw(Prisma.sql`SELECT 1`);
+      await prisma.$queryRaw`SELECT 1`;
       console.log('Database connection successful');
     } catch (dbError) {
       console.error('Database connection failed:', dbError);

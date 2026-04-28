@@ -61,6 +61,10 @@ export async function GET(request: NextRequest) {
         player_name: true,
         challonge_username: true,
         api_key: true,
+        challonge_client_id: true,
+        challonge_client_secret: true,
+        challonge_redirect_uri: true,
+        challonge_access_token: true,
         user_role: true,
         created_at: true
       }
@@ -111,6 +115,10 @@ export async function PUT(request: NextRequest) {
       player_name, 
       challonge_username, 
       api_key,
+      challonge_client_id,
+      challonge_client_secret,
+      challonge_redirect_uri,
+      challonge_access_token,
       email,
       current_password,
       new_password 
@@ -159,6 +167,10 @@ export async function PUT(request: NextRequest) {
           player_name: player_name || null,
           challonge_username: challonge_username || null,
           api_key: api_key || null,
+          challonge_client_id: challonge_client_id || null,
+          challonge_client_secret: challonge_client_secret || null,
+          challonge_redirect_uri: challonge_redirect_uri || null,
+          challonge_access_token: challonge_access_token || null,
           email: email || null,
           password: hashedNewPassword
         }
@@ -173,6 +185,10 @@ export async function PUT(request: NextRequest) {
           player_name: player_name || null,
           challonge_username: challonge_username || null,
           api_key: api_key || null,
+          challonge_client_id: challonge_client_id || null,
+          challonge_client_secret: challonge_client_secret || null,
+          challonge_redirect_uri: challonge_redirect_uri || null,
+          challonge_access_token: challonge_access_token || null,
           email: email || null
         }
       });
@@ -189,6 +205,10 @@ export async function PUT(request: NextRequest) {
         player_name: true,
         challonge_username: true,
         api_key: true,
+        challonge_client_id: true,
+        challonge_client_secret: true,
+        challonge_redirect_uri: true,
+        challonge_access_token: true,
         user_role: true,
         created_at: true
       }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 interface User {
   user_id: number;
@@ -11,6 +11,10 @@ interface User {
   player_name: string;
   challonge_username: string;
   api_key: string;
+  challonge_client_id: string;
+  challonge_client_secret: string;
+  challonge_redirect_uri: string;
+  challonge_access_token: string;
   user_role: string;
   created_at: string;
 }
@@ -21,6 +25,10 @@ interface FormData {
   player_name: string;
   challonge_username: string;
   api_key: string;
+  challonge_client_id: string;
+  challonge_client_secret: string;
+  challonge_redirect_uri: string;
+  challonge_access_token: string;
 }
 
 interface PasswordData {
@@ -33,17 +41,23 @@ export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAuthorizing, setIsAuthorizing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [activeTab, setActiveTab] = useState<'profile' | 'password'>('profile');
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [formData, setFormData] = useState<FormData>({
     name: '',
     email: '',
     player_name: '',
     challonge_username: '',
-    api_key: ''
+    api_key: '',
+    challonge_client_id: '',
+    challonge_client_secret: '',
+    challonge_redirect_uri: '',
+    challonge_access_token: ''
   });
 
   const [passwordData, setPasswordData] = useState<PasswordData>({
@@ -55,6 +69,20 @@ export default function SettingsPage() {
   useEffect(() => {
     checkAuthAndLoadProfile();
   }, []);
+
+  useEffect(() => {
+    const oauthStatus = searchParams.get('oauth');
+    const oauthMessage = searchParams.get('message');
+    if (!oauthStatus) return;
+
+    if (oauthStatus === 'success') {
+      setSuccess('Challonge access token received and saved successfully.');
+      checkAuthAndLoadProfile();
+      return;
+    }
+
+    setError(oauthMessage ? decodeURIComponent(oauthMessage) : 'Failed to get Challonge access token');
+  }, [searchParams]);
 
   const checkAuthAndLoadProfile = async () => {
     const token = localStorage.getItem('authToken');
@@ -80,7 +108,11 @@ export default function SettingsPage() {
           email: data.user.email || '',
           player_name: data.user.player_name || '',
           challonge_username: data.user.challonge_username || '',
-          api_key: data.user.api_key || ''
+          api_key: data.user.api_key || '',
+          challonge_client_id: data.user.challonge_client_id || '',
+          challonge_client_secret: data.user.challonge_client_secret || '',
+          challonge_redirect_uri: data.user.challonge_redirect_uri || '',
+          challonge_access_token: data.user.challonge_access_token || ''
         });
       } else {
         localStorage.removeItem('authToken');
@@ -202,6 +234,51 @@ export default function SettingsPage() {
       ...prev,
       [name]: value
     }));
+  };
+
+  const handleGetAccessToken = async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      router.push('/backend/login');
+      return;
+    }
+
+    if (!formData.challonge_client_id || !formData.challonge_client_secret || !formData.challonge_redirect_uri) {
+      setError('Please fill in Client ID, Client Secret, and Redirect URI first.');
+      return;
+    }
+
+    setIsAuthorizing(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const response = await fetch('/api/challonge/oauth/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          challonge_client_id: formData.challonge_client_id,
+          challonge_client_secret: formData.challonge_client_secret,
+          challonge_redirect_uri: formData.challonge_redirect_uri
+        })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success || !data.authorizeUrl) {
+        setError(data.error || 'Failed to start Challonge OAuth flow');
+        return;
+      }
+
+      window.location.href = data.authorizeUrl;
+    } catch {
+      setError('Network error while starting OAuth flow');
+    } finally {
+      setIsAuthorizing(false);
+    }
   };
 
   if (isLoading) {
@@ -384,6 +461,72 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500 mt-1">
                     Used for tournament integration with Challonge
                   </p>
+                </div>
+
+                <div className="md:col-span-2 rounded-lg border border-blue-200 bg-blue-50 p-4">
+                  <h3 className="text-sm font-semibold text-blue-900 mb-2">
+                    Challonge OAuth Direction Fields
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="challonge_client_id" className="block text-xs font-medium text-blue-900 mb-1">Client ID</label>
+                      <input
+                        type="text"
+                        id="challonge_client_id"
+                        name="challonge_client_id"
+                        value={formData.challonge_client_id}
+                        onChange={handleInputChange}
+                        placeholder="Enter Challonge Client ID"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg bg-white text-gray-700"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="challonge_client_secret" className="block text-xs font-medium text-blue-900 mb-1">Client Secret</label>
+                      <input
+                        type="password"
+                        id="challonge_client_secret"
+                        name="challonge_client_secret"
+                        value={formData.challonge_client_secret}
+                        onChange={handleInputChange}
+                        placeholder="Enter Challonge Client Secret"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg bg-white text-gray-700"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label htmlFor="challonge_redirect_uri" className="block text-xs font-medium text-blue-900 mb-1">Redirect URI</label>
+                      <input
+                        type="text"
+                        id="challonge_redirect_uri"
+                        name="challonge_redirect_uri"
+                        value={formData.challonge_redirect_uri}
+                        onChange={handleInputChange}
+                        placeholder="https://your-domain.com/api/challonge/oauth/callback"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg bg-white text-gray-700"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label htmlFor="challonge_access_token" className="block text-xs font-medium text-blue-900 mb-1">Access Token</label>
+                      <input
+                        type="password"
+                        id="challonge_access_token"
+                        name="challonge_access_token"
+                        value={formData.challonge_access_token}
+                        onChange={handleInputChange}
+                        placeholder="Access token will be populated after OAuth"
+                        className="w-full px-3 py-2 border border-blue-200 rounded-lg bg-white text-gray-700"
+                      />
+                    </div>
+                    <div className="md:col-span-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleGetAccessToken}
+                        disabled={isAuthorizing}
+                        className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isAuthorizing ? 'Authorizing...' : 'Get Access Token'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 

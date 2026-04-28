@@ -104,13 +104,13 @@ export async function GET(request: NextRequest) {
       select: { community_id: true, name: true }
     });
     const communityNameMap = new Map(
-      communityNames.map((community) => [community.community_id, community.name])
+      communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
     );
 
-    const judges = judgeRows.map((judge) => {
+    const judges = judgeRows.map((judge: any) => {
       const communityIds = Array.isArray(judge.community_ids) ? judge.community_ids : [];
       const names = communityIds
-        .map((id) => communityNameMap.get(id as number))
+        .map((id: any) => communityNameMap.get(id as number))
         .filter(Boolean);
 
       return {
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       select: { community_id: true, name: true }
     });
     const communityNameMap = new Map(
-      communityNames.map((community) => [community.community_id, community.name])
+      communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
     );
 
     if (!authCheck.user) {
@@ -221,7 +221,7 @@ export async function POST(request: NextRequest) {
 
     const names = Array.isArray(createdJudge.community_ids)
       ? createdJudge.community_ids
-          .map((id) => communityNameMap.get(id as number))
+          .map((id: any) => communityNameMap.get(id as number))
           .filter(Boolean)
       : [];
 
@@ -319,7 +319,7 @@ export async function PUT(request: NextRequest) {
       select: { community_id: true, name: true }
     });
     const communityNameMap = new Map(
-      communityNames.map((community) => [community.community_id, community.name])
+      communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
     );
 
     // Check if username already exists for other judges
@@ -371,7 +371,7 @@ export async function PUT(request: NextRequest) {
 
     const updatedNames = Array.isArray(updatedJudge.community_ids)
       ? updatedJudge.community_ids
-          .map((id) => communityNameMap.get(id as number))
+          .map((id: any) => communityNameMap.get(id as number))
           .filter(Boolean)
       : [];
 

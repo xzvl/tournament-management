@@ -1,5 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const CHALLONGE_V21_BASE_URL = 'https://api.challonge.com/v2.1';
+
+function getChallongeV21Headers(apiKey: string): HeadersInit {
+  return {
+    'Authorization-Type': 'v1',
+    'Authorization': apiKey,
+    'Content-Type': 'application/vnd.api+json',
+    'Accept': 'application/json'
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
@@ -13,9 +24,13 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Fetch from Challonge API
+    // Fetch from Challonge API v2.1
     const challongeResponse = await fetch(
-      `https://api.challonge.com/v1/tournaments/${challongeId}/participants.json?api_key=${apiKey}`
+      `${CHALLONGE_V21_BASE_URL}/tournaments/${encodeURIComponent(challongeId)}/participants.json`,
+      {
+        method: 'GET',
+        headers: getChallongeV21Headers(apiKey)
+      }
     );
 
     if (!challongeResponse.ok) {
@@ -27,7 +42,27 @@ export async function GET(request: NextRequest) {
       }, { status: challongeResponse.status });
     }
 
-    const participants = await challongeResponse.json();
+    const responseData = await challongeResponse.json();
+    const participantsData = Array.isArray(responseData?.data) ? responseData.data : [];
+
+    // Normalize v2.1 JSON:API response to the existing v1-like shape used by UI code.
+    const participants = participantsData.map((item: any) => {
+      const attributes = item?.attributes ?? {};
+      const participantId = Number(item?.id);
+      const normalizedId = Number.isFinite(participantId) ? participantId : item?.id;
+
+      return {
+        participant: {
+          id: normalizedId,
+          name: attributes?.name ?? 'Unknown Player',
+          display_name: attributes?.name ?? 'Unknown Player',
+          username: attributes?.username ?? null,
+          group_id: attributes?.group_id ?? null,
+          final_rank: attributes?.final_rank ?? null,
+          group_player_ids: []
+        }
+      };
+    });
 
     return NextResponse.json({
       success: true,

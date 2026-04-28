@@ -9,6 +9,10 @@ export interface User {
   player_name?: string;
   challonge_username?: string;
   api_key?: string;
+  challonge_client_id?: string;
+  challonge_client_secret?: string;
+  challonge_redirect_uri?: string;
+  challonge_access_token?: string;
   user_role: 'admin' | 'tournament_organizer';
   created_at: Date;
   updated_at: Date;
