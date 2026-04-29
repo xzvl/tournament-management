@@ -95,7 +95,7 @@ export default function TournamentsManagement() {
       ...prev,
       to_id: authUser?.user_id
     }));
-    setCurrentUser(authUser || null);
+    setCurrentUser((authUser as unknown as User) || null);
   }, [authUser]);
 
   // Load tournaments and judges in parallel after auth is verified

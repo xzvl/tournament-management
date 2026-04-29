@@ -43,7 +43,7 @@ export default function CommunitiesManagement() {
 
   // Update current user when authUser changes
   useEffect(() => {
-    setCurrentUser(authUser || null);
+    setCurrentUser((authUser as unknown as User) || null);
   }, [authUser]);
 
   // Load communities after auth is verified

@@ -102,8 +102,8 @@ export async function GET(request: NextRequest) {
         });
 
     // Collect unique community IDs from all judges
-    const uniqueCommunityIds = Array.from(
-      new Set(judgeRows.flatMap((j: any) => Array.isArray(j.community_ids) ? j.community_ids : []))
+    const uniqueCommunityIds: number[] = Array.from(
+      new Set(judgeRows.flatMap((j: any) => Array.isArray(j.community_ids) ? (j.community_ids as number[]) : []))
     );
 
     // Fetch only the communities we need (optimization: single query instead of N queries)
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Fetch only the communities we need
-    const communityIdsToFetch = Array.isArray(createdJudge.community_ids) ? createdJudge.community_ids : [];
+    const communityIdsToFetch: number[] = Array.isArray(createdJudge.community_ids) ? (createdJudge.community_ids as number[]) : [];
     const communityNames = communityIdsToFetch.length > 0
       ? await prisma.community.findMany({
           where: { community_id: { in: communityIdsToFetch } },

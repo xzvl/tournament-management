@@ -70,7 +70,7 @@ export default function JudgesManagement() {
 
   // Update current user when authUser changes
   useEffect(() => {
-    setCurrentUser(authUser || null);
+    setCurrentUser((authUser as unknown as User) || null);
   }, [authUser]);
 
   // Load judges and communities in parallel after auth is verified

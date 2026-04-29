@@ -40,7 +40,7 @@ export default function UsersManagement() {
 
   // Update current user when authUser changes
   useEffect(() => {
-    setCurrentUser(authUser || null);
+    setCurrentUser((authUser as unknown as User) || null);
   }, [authUser]);
 
   // Load users after auth is verified

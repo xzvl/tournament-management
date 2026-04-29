@@ -7,7 +7,7 @@ import { useBackendAuth } from '@/hooks/useBackendAuth';
 interface User {
   user_id: number;
   username: string;
-  name: string;
+  name?: string;
   user_role: string;
 }
 
@@ -213,7 +213,7 @@ export default function BackendDashboard() {
 }
 
 // Tournaments Section Component
-function TournamentsSection({ user, router }: { user: User; router: any }) {
+function TournamentsSection({ user, router }: { user: User | null; router: any }) {
   const [tournaments, setTournaments] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
