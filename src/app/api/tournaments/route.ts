@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
+import { cachedJsonResponse } from '@/lib/api-response';
 
 // GET - List tournaments for the user's communities
 export async function GET(request: NextRequest) {
   try {
     const showAll = request.nextUrl.searchParams.get('showAll') === 'true';
+    const activeOnly = request.nextUrl.searchParams.get('activeOnly') === 'true';
+    const windowBeforeDaysParam = request.nextUrl.searchParams.get('windowBeforeDays');
+    const windowAfterMonthsParam = request.nextUrl.searchParams.get('windowAfterMonths');
+
+    const windowBeforeDays = windowBeforeDaysParam ? Number(windowBeforeDaysParam) : null;
+    const windowAfterMonths = windowAfterMonthsParam ? Number(windowAfterMonthsParam) : null;
+
+    const hasWindowFilter =
+      Number.isFinite(windowBeforeDays) &&
+      Number.isFinite(windowAfterMonths) &&
+      windowBeforeDays !== null &&
+      windowAfterMonths !== null;
 
     let authCheck: any = { success: false, user: null };
 
@@ -25,10 +38,39 @@ export async function GET(request: NextRequest) {
 
     const user = authCheck.user;
 
+    const now = new Date();
+    const startDate = hasWindowFilter
+      ? (() => {
+          const start = new Date(now);
+          start.setDate(start.getDate() - (windowBeforeDays as number));
+          return start;
+        })()
+      : null;
+    const endDate = hasWindowFilter
+      ? (() => {
+          const end = new Date(now);
+          end.setMonth(end.getMonth() + (windowAfterMonths as number));
+          return end;
+        })()
+      : null;
+
+    const whereClause: any = showAll || user?.role === 'admin'
+      ? {}
+      : { to_id: user?.user_id };
+
+    if (activeOnly) {
+      whereClause.active = true;
+    }
+
+    if (startDate && endDate) {
+      whereClause.tournament_date = {
+        gte: startDate,
+        lte: endDate
+      };
+    }
+
     const tournaments = await prisma.challongeTournament.findMany({
-      where: showAll || user?.role === 'admin'
-        ? undefined
-        : { to_id: user?.user_id },
+      where: whereClause,
       include: {
         organizer: {
           select: { username: true, name: true }
@@ -40,9 +82,15 @@ export async function GET(request: NextRequest) {
       ]
     });
 
-    const communityRows = await prisma.community.findMany({
-      select: { community_id: true, name: true, to_id: true }
-    });
+    // Optimization: Fetch only the communities referenced by tournaments (not all)
+    const uniqueToIds = Array.from(new Set(tournaments.map(t => String(t.to_id ?? '')).filter(Boolean)));
+    const communityRows = uniqueToIds.length > 0
+      ? await prisma.community.findMany({
+          where: { to_id: { in: uniqueToIds } },
+          select: { community_id: true, name: true, to_id: true }
+        })
+      : [];
+    
     const communityByToId = new Map(
       communityRows.map((community) => [community.to_id, community.name])
     );
@@ -80,10 +128,10 @@ export async function GET(request: NextRequest) {
         tournament.pre_register_cutoff
     }));
 
-    return NextResponse.json({
+    return cachedJsonResponse({
       success: true,
       tournaments: formattedTournaments
-    });
+    }, 120); // Cache for 2 minutes
 
   } catch (error) {
     console.error('Get tournaments error:', error);

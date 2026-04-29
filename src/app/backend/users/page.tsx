@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBackendAuthAdmin } from '@/hooks/useBackendAuth';
 import { EnhancedTable, Column } from '@/components/EnhancedTable';
 
 interface User {
@@ -17,13 +18,14 @@ interface User {
 }
 
 export default function UsersManagement() {
+  const router = useRouter();
+  const { user: authUser, isLoading: authLoading } = useBackendAuthAdmin();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [error, setError] = useState('');
-  const router = useRouter();
 
   const [formData, setFormData] = useState({
     username: '',
@@ -36,46 +38,36 @@ export default function UsersManagement() {
     user_role: 'tournament_organizer' as 'admin' | 'tournament_organizer'
   });
 
+  // Update current user when authUser changes
   useEffect(() => {
-    checkAuthAndLoadUsers();
-  }, []);
+    setCurrentUser(authUser || null);
+  }, [authUser]);
 
-  const checkAuthAndLoadUsers = async () => {
+  // Load users after auth is verified
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!authUser) {
+      router.push('/backend/login');
+      return;
+    }
+
+    loadUsers();
+  }, [authUser, authLoading, router]);
+
+  const loadUsers = async () => {
     const token = localStorage.getItem('authToken');
-    
     if (!token) {
       router.push('/backend/login');
       return;
     }
 
     try {
-      // Verify auth and get current user
-      const authResponse = await fetch('/api/auth/verify', {
+      const response = await fetch('/api/users', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
-      const authData = await authResponse.json();
-
-      if (!authData.success) {
-        localStorage.removeItem('authToken');
-        router.push('/backend/login');
-        return;
-      }
-
-      // Check if user is admin
-      if (authData.user.user_role !== 'admin') {
-        router.push('/backend');
-        return;
-      }
-
-      setCurrentUser(authData.user);
-
-      // Load users
-      const usersResponse = await fetch('/api/users', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const usersData = await usersResponse.json();
+      const usersData = await response.json();
 
       if (usersData.success && usersData.users) {
         setUsers(usersData.users);
@@ -85,7 +77,7 @@ export default function UsersManagement() {
       }
 
     } catch (error) {
-      console.error('Error:', error);
+      console.error('Error loading users:', error);
       setError('Failed to load data');
     } finally {
       setIsLoading(false);

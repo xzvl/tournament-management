@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBackendAuthAdmin } from '@/hooks/useBackendAuth';
 import { EnhancedTable, Column } from '@/components/EnhancedTable';
 
 interface Community {
@@ -30,6 +31,8 @@ interface User {
 }
 
 export default function CommunitiesManagement() {
+  const router = useRouter();
+  const { user: authUser, isLoading: authLoading } = useBackendAuthAdmin();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -37,54 +40,32 @@ export default function CommunitiesManagement() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
-  const router = useRouter();
 
+  // Update current user when authUser changes
   useEffect(() => {
-    checkAuthAndLoadCommunities();
-  }, []);
+    setCurrentUser(authUser || null);
+  }, [authUser]);
 
-  const checkAuthAndLoadCommunities = async () => {
+  // Load communities after auth is verified
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!authUser) {
+      router.push('/backend/login');
+      return;
+    }
+
+    loadCommunities();
+  }, [authUser, authLoading, router]);
+
+  const loadCommunities = async () => {
     const token = localStorage.getItem('authToken');
-    
     if (!token) {
       router.push('/backend/login');
       return;
     }
 
     try {
-      // Verify auth and get current user
-      const authResponse = await fetch('/api/auth/verify', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const authData = await authResponse.json();
-
-      if (!authData.success) {
-        localStorage.removeItem('authToken');
-        router.push('/backend/login');
-        return;
-      }
-
-      // Check if user is admin
-      if (authData.user.role !== 'admin' && authData.user.user_role !== 'admin') {
-        router.push('/backend');
-        return;
-      }
-
-      setCurrentUser(authData.user);
-      await loadCommunities();
-
-    } catch (error) {
-      console.error('Auth error:', error);
-      router.push('/backend/login');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const loadCommunities = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
       const response = await fetch('/api/communities', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -98,11 +79,12 @@ export default function CommunitiesManagement() {
         setCommunities([]);
       }
     } catch (error) {
-      setError('Network error loading communities');
-      setCommunities([]);
+      console.error('Error loading communities:', error);
+      setError('Failed to load communities');
+    } finally {
+      setIsLoading(false);
     }
   };
-
 
   const handleEditCommunity = (community: Community) => {
     router.push(`/backend/communities/${community.community_id}`);

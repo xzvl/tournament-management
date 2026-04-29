@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBackendAuth } from '@/hooks/useBackendAuth';
 import { EnhancedTable, Column } from '@/components/EnhancedTable';
 
 interface User {
@@ -57,11 +58,12 @@ interface TournamentForm {
 }
 
 export default function TournamentsManagement() {
+  const router = useRouter();
+  const { user: authUser, isLoading: authLoading } = useBackendAuth();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [judges, setJudges] = useState<Judge[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [user, setUser] = useState<any>(null); // Keep for backward compatibility
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -73,7 +75,6 @@ export default function TournamentsManagement() {
   const [syncToChallonge, setSyncToChallonge] = useState(true);
   const [originalChallongeId, setOriginalChallongeId] = useState<string>('');
   const [originalJudgeStadiumMap, setOriginalJudgeStadiumMap] = useState<{ [key: string]: number }>({});
-  const router = useRouter();
 
   const [formData, setFormData] = useState<TournamentForm>({
     challonge_id: '',
@@ -85,24 +86,77 @@ export default function TournamentsManagement() {
     total_stadium: 1,
     assigned_judge_ids: [],
     active: true,
-    to_id: currentUser?.user_id
+    to_id: authUser?.user_id
   });
 
-  const fetchJudges = async () => {
+  // Update formData when authUser changes
+  useEffect(() => {
+    setFormData(prev => ({
+      ...prev,
+      to_id: authUser?.user_id
+    }));
+    setCurrentUser(authUser || null);
+  }, [authUser]);
+
+  // Load tournaments and judges in parallel after auth is verified
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!authUser) {
+      router.push('/backend/login');
+      return;
+    }
+
+    loadTournamentsAndJudges();
+  }, [authUser, authLoading, router]);
+
+  // Load users if admin
+  useEffect(() => {
+    if (currentUser?.user_role === 'admin') {
+      fetchUsers();
+    }
+  }, [currentUser]);
+
+  const loadTournamentsAndJudges = async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      router.push('/backend/login');
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('/api/judges', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        setJudges(data.judges);
+      // Fetch tournaments and judges in parallel
+      const [tournamentsRes, judgesRes] = await Promise.all([
+        fetch('/api/tournaments', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch('/api/judges', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
+
+      const tournamentsData = await tournamentsRes.json();
+      const judgesData = await judgesRes.json();
+
+      if (tournamentsData.success && tournamentsData.tournaments) {
+        setTournaments(tournamentsData.tournaments);
+      } else if (tournamentsData.error && tournamentsData.error.includes('community')) {
+        router.push('/backend/community?redirect=tournaments');
+        return;
+      } else {
+        setTournaments([]);
+        setError('Failed to load tournaments: ' + (tournamentsData.error || 'Unknown error'));
       }
+
+      if (judgesData.success) {
+        setJudges(judgesData.judges);
+      }
+
     } catch (error) {
-      console.error('Error fetching judges:', error);
+      console.error('Error loading data:', error);
+      setError('Failed to load data');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -132,68 +186,6 @@ export default function TournamentsManagement() {
     }
     // Fallback to just the name/username
     return `TO: ${user.name || user.username}`;
-  };
-
-  useEffect(() => {
-    checkAuthAndLoadTournaments();
-    fetchJudges();
-  }, []);
-
-  useEffect(() => {
-    if (currentUser?.user_role === 'admin') {
-      fetchUsers();
-    }
-  }, [currentUser]);
-
-  const checkAuthAndLoadTournaments = async () => {
-    const token = localStorage.getItem('authToken');
-    
-    if (!token) {
-      router.push('/backend/login');
-      return;
-    }
-
-    try {
-      // Verify auth and get current user
-      const authResponse = await fetch('/api/auth/verify', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const authData = await authResponse.json();
-
-      if (!authData.success) {
-        localStorage.removeItem('authToken');
-        router.push('/backend/login');
-        return;
-      }
-
-      setCurrentUser(authData.user);
-      setUser(authData.user); // For backward compatibility
-
-      // Load tournaments - show only current user's tournaments
-      const tournamentsResponse = await fetch('/api/tournaments', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const tournamentsData = await tournamentsResponse.json();
-
-      if (tournamentsData.success && tournamentsData.tournaments) {
-        setTournaments(tournamentsData.tournaments);
-      } else if (tournamentsData.error && tournamentsData.error.includes('community')) {
-        // User doesn't have a community - redirect to community setup
-        router.push('/backend/community?redirect=tournaments');
-        return;
-      } else {
-        setTournaments([]);
-        setError('Failed to load tournaments: ' + (tournamentsData.error || 'Unknown error'));
-      }
-
-    } catch (error) {
-      console.error('Error:', error);
-      setError('Failed to load data');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   const handleOpenModal = (tournament?: Tournament) => {

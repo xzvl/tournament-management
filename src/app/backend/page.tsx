@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBackendAuth } from '@/hooks/useBackendAuth';
 
 interface User {
   user_id: number;
@@ -11,48 +12,11 @@ interface User {
 }
 
 export default function BackendDashboard() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-
-  useEffect(() => {
-    const checkAuth = async () => {
-      const token = localStorage.getItem('authToken');
-      
-      if (!token) {
-        router.push('/backend/login');
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/auth/verify', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-          setUser(data.user);
-        } else {
-          localStorage.removeItem('authToken');
-          router.push('/backend/login');
-        }
-      } catch (error) {
-        localStorage.removeItem('authToken');
-        router.push('/backend/login');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    checkAuth();
-  }, [router]);
+  const { user, isLoading, logout } = useBackendAuth();
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    router.push('/backend/login');
+    logout();
   };
 
   if (isLoading) {

@@ -91,25 +91,13 @@ export default function HomePage() {
           headers['Authorization'] = `Bearer ${token}`;
         }
 
-        const response = await fetch('/api/tournaments?showAll=true', {
+        const response = await fetch('/api/tournaments?showAll=true&activeOnly=true&windowBeforeDays=14&windowAfterMonths=1', {
           headers
         });
 
         const data = await response.json();
         if (data.success) {
-          const now = new Date();
-          const start = new Date(now);
-          start.setDate(start.getDate() - 14);
-          const end = new Date(now);
-          end.setMonth(end.getMonth() + 1);
-
-          const filtered = (data.tournaments || []).filter((tournament: Tournament) => {
-            if (!tournament.active || !tournament.tournament_date) return false;
-            const tournamentDate = new Date(tournament.tournament_date);
-            return tournamentDate >= start && tournamentDate <= end;
-          });
-
-          setTournaments(filtered);
+          setTournaments(data.tournaments || []);
         } else {
           setError(data.error || 'Failed to load tournaments');
         }
@@ -143,13 +131,6 @@ export default function HomePage() {
         const data = await response.json();
         if (data.success) {
           setCommunities(data.communities || []);
-          // Debug: log full community objects for inspection
-          try {
-            console.log('Loaded communities:', data.communities);
-            (data.communities || []).forEach((c: any) => console.log('community', c));
-          } catch (e) {
-            console.log('Communities debug log error', e);
-          }
         }
       } catch (e) {
         console.error('Failed to load communities');

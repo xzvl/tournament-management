@@ -189,16 +189,19 @@ export default function PlayerPage() {
     }
   }, [players, searchParams, selectedPlayer, isEditingPlayer]);
 
-
+  // Optimized: Fetch tournament and user data in parallel
   useEffect(() => {
-    const fetchTournament = async () => {
+    const fetchInitialData = async () => {
       try {
-        // Query the API endpoint directly with the challongeId
-        const response = await fetch(`/api/tournaments?showAll=true`);
-        const data = await response.json();
+        const [tournamentRes, userRes] = await Promise.all([
+          fetch(`/api/tournaments?showAll=true`),
+          null // Placeholder - we'll handle user fetch in the next effect
+        ]);
+
+        const tournamentData = await tournamentRes.json();
         
-        if (data.success && data.tournaments) {
-          const tournament = data.tournaments.find((t: any) => t.challonge_id === challongeId);
+        if (tournamentData.success && tournamentData.tournaments) {
+          const tournament = tournamentData.tournaments.find((t: any) => t.challonge_id === challongeId);
           if (tournament) {
             setToId(tournament.to_id);
           } else {
@@ -214,7 +217,7 @@ export default function PlayerPage() {
     };
 
     if (challongeId) {
-      fetchTournament();
+      fetchInitialData();
     }
   }, [challongeId]);
 

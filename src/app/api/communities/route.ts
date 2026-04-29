@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyAuth } from '@/lib/auth';
+import { cachedJsonResponse } from '@/lib/api-response';
 
 // Explicit selects (kept in-sync with Prisma schema)
 export async function GET(request: NextRequest) {
@@ -24,10 +25,10 @@ export async function GET(request: NextRequest) {
       orderBy: { name: 'asc' }
     });
 
-    return NextResponse.json({
+    return cachedJsonResponse({
       success: true,
       communities
-    });
+    }, 120); // Cache for 2 minutes
 
   } catch (error) {
     console.error('Communities API Error:', error);

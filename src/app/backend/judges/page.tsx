@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useBackendAuth } from '@/hooks/useBackendAuth';
 import { EnhancedTable, Column } from '@/components/EnhancedTable';
 
 interface User {
@@ -40,10 +41,11 @@ interface JudgeForm {
 }
 
 export default function JudgesManagement() {
+  const router = useRouter();
+  const { user: authUser, isLoading: authLoading } = useBackendAuth();
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [judges, setJudges] = useState<Judge[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
-  const [user, setUser] = useState<any>(null); // Keep for backward compatibility
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -58,7 +60,6 @@ export default function JudgesManagement() {
   const [qrPassword, setQrPassword] = useState<string | null>(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState('');
-  const router = useRouter();
 
   const [formData, setFormData] = useState<JudgeForm>({
     username: '',
@@ -67,28 +68,59 @@ export default function JudgesManagement() {
     community_ids: []
   });
 
-  const fetchCommunities = async () => {
+  // Update current user when authUser changes
+  useEffect(() => {
+    setCurrentUser(authUser || null);
+  }, [authUser]);
+
+  // Load judges and communities in parallel after auth is verified
+  useEffect(() => {
+    if (authLoading) return;
+
+    if (!authUser) {
+      router.push('/backend/login');
+      return;
+    }
+
+    loadJudgesAndCommunities();
+  }, [authUser, authLoading, router]);
+
+  const loadJudgesAndCommunities = async () => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      router.push('/backend/login');
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('authToken');
-      const response = await fetch('/api/communities', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        setCommunities(data.communities);
+      // Fetch judges and communities in parallel
+      const [judgesRes, communitiesRes] = await Promise.all([
+        fetch('/api/judges', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch('/api/communities', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
+
+      const judgesData = await judgesRes.json();
+      const communitiesData = await communitiesRes.json();
+
+      if (judgesData.success) {
+        setJudges(judgesData.judges);
       }
+
+      if (communitiesData.success) {
+        setCommunities(communitiesData.communities);
+      }
+
     } catch (error) {
-      console.error('Error fetching communities:', error);
+      console.error('Error loading data:', error);
+      setError('Failed to load data');
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  useEffect(() => {
-    checkAuthAndLoadJudges();
-    fetchCommunities();
-  }, []);
 
   useEffect(() => {
     const generateQr = async () => {
@@ -133,56 +165,6 @@ export default function JudgesManagement() {
     generateQr();
   }, [showQrModal, qrJudge]);
 
-  const checkAuthAndLoadJudges = async () => {
-    const token = localStorage.getItem('authToken');
-    
-    if (!token) {
-      router.push('/backend/login');
-      return;
-    }
-
-    try {
-      // Verify auth and get current user
-      const authResponse = await fetch('/api/auth/verify', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const authData = await authResponse.json();
-
-      if (!authData.success) {
-        localStorage.removeItem('authToken');
-        router.push('/backend/login');
-        return;
-      }
-
-      setCurrentUser(authData.user);
-      setUser(authData.user); // For backward compatibility
-
-      // Load judges
-      const judgesResponse = await fetch('/api/judges', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const judgesData = await judgesResponse.json();
-
-      if (judgesData.success) {
-        setJudges(judgesData.judges);
-      } else if (judgesData.error.includes('community')) {
-        // User doesn't have a community - redirect to community setup
-        router.push('/backend/community?redirect=judges');
-        return;
-      } else {
-        setError('Failed to load judges: ' + judgesData.error);
-      }
-
-    } catch (error) {
-      console.error('Error:', error);
-      setError('Failed to load data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleOpenModal = (judge?: Judge) => {
     if (judge) {
       let communityIds: number[] = [];
@@ -220,7 +202,7 @@ export default function JudgesManagement() {
         username: '',
         password: '',
         judge_name: '',
-        community_ids: user?.role === 'admin' ? [] : [user?.community_id || 0]
+        community_ids: currentUser?.user_role === 'admin' ? [] : []
       });
       setIsEditing(false);
     }
@@ -235,7 +217,7 @@ export default function JudgesManagement() {
       username: '', 
       password: '', 
       judge_name: '', 
-      community_ids: user?.role === 'admin' ? [] : [user?.community_id || 0]
+      community_ids: currentUser?.user_role === 'admin' ? [] : []
     });
     setError('');
   };
@@ -247,7 +229,7 @@ export default function JudgesManagement() {
     setSuccess('');
 
     // Validate communities for admin users
-    if (user?.role === 'admin' && formData.community_ids.length === 0) {
+    if (currentUser?.user_role === 'admin' && formData.community_ids.length === 0) {
       setError('Please select at least one community for the judge');
       setIsSaving(false);
       return;
@@ -538,7 +520,7 @@ export default function JudgesManagement() {
                 </p>
               </div>
               
-              {user?.role === 'admin' && (
+              {currentUser?.user_role === 'admin' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Communities *

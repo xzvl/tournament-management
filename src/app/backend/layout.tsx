@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useBackendAuth } from '@/hooks/useBackendAuth';
 
 interface User {
   user_role?: string;
@@ -10,69 +11,19 @@ interface User {
 
 export default function BackendLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
-  const [communityLogo, setCommunityLogo] = useState<string | null>(null);
+  const { user: authUser, community, logout } = useBackendAuth();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   const isLoginPage = useMemo(() => pathname === '/backend/login', [pathname]);
 
-  useEffect(() => {
-    const loadUser = async () => {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        setUser(null);
-        setCommunityLogo(null);
-        return;
-      }
+  // Memoize user object
+  const user = useMemo(() => authUser as User | null, [authUser]);
+  const communityLogo = useMemo(() => community?.logo || null, [community]);
 
-      try {
-        const response = await fetch('/api/auth/verify', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await response.json();
-        if (data.success) {
-          setUser(data.user || null);
-        } else {
-          setUser(null);
-        }
-      } catch {
-        setUser(null);
-      }
-    };
-
-    const loadCommunityLogo = async () => {
-      const token = localStorage.getItem('authToken');
-      if (!token) {
-        setCommunityLogo(null);
-        return;
-      }
-
-      try {
-        const response = await fetch('/api/community', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await response.json();
-        if (data.success && data.data?.logo) {
-          setCommunityLogo(data.data.logo);
-        } else {
-          setCommunityLogo(null);
-        }
-      } catch {
-        setCommunityLogo(null);
-      }
-    };
-
-    if (!isLoginPage) {
-      loadUser();
-      loadCommunityLogo();
-    }
-  }, [isLoginPage]);
+  const handleLogout = () => {
+    logout();
+  };
 
   useEffect(() => {
     setIsMenuOpen(false);
@@ -89,11 +40,6 @@ export default function BackendLayout({ children }: { children: React.ReactNode 
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    router.push('/backend/login');
-  };
 
   const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     const target = event.target as HTMLElement | null;

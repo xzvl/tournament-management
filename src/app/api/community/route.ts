@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import prisma from '@/lib/prisma';
+import { cachedJsonResponse } from '@/lib/api-response';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -103,10 +104,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    return NextResponse.json({
+    return cachedJsonResponse({
       success: true,
       data: community
-    });
+    }, 120); // Cache for 2 minutes
 
   } catch (error) {
     console.error('Get community error:', error);

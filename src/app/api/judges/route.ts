@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import jwt from 'jsonwebtoken';
 import prisma from '@/lib/prisma';
+import { cachedJsonResponse } from '@/lib/api-response';
 
 // Middleware to verify authentication
 async function verifyAuth(request: NextRequest) {
@@ -100,9 +101,19 @@ export async function GET(request: NextRequest) {
           orderBy: { created_at: 'desc' }
         });
 
-    const communityNames = await prisma.community.findMany({
-      select: { community_id: true, name: true }
-    });
+    // Collect unique community IDs from all judges
+    const uniqueCommunityIds = Array.from(
+      new Set(judgeRows.flatMap((j: any) => Array.isArray(j.community_ids) ? j.community_ids : []))
+    );
+
+    // Fetch only the communities we need (optimization: single query instead of N queries)
+    const communityNames = uniqueCommunityIds.length > 0
+      ? await prisma.community.findMany({
+          where: { community_id: { in: uniqueCommunityIds } },
+          select: { community_id: true, name: true }
+        })
+      : [];
+
     const communityNameMap = new Map(
       communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
     );
@@ -119,10 +130,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({
+    return cachedJsonResponse({
       success: true,
       judges: judges
-    });
+    }, 120); // Cache for 2 minutes
 
   } catch (error) {
     console.error('Get judges error:', error);
@@ -143,12 +154,6 @@ export async function POST(request: NextRequest) {
         error: authCheck.error
       }, { status: authCheck.status });
     }
-    const communityNames = await prisma.community.findMany({
-      select: { community_id: true, name: true }
-    });
-    const communityNameMap = new Map(
-      communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
-    );
 
     if (!authCheck.user) {
       return NextResponse.json({
@@ -158,7 +163,6 @@ export async function POST(request: NextRequest) {
     }
 
     const user = authCheck.user;
-
     const body = await request.json();
     const { username, password, judge_name, community_ids } = body;
 
@@ -218,6 +222,19 @@ export async function POST(request: NextRequest) {
         updated_at: true
       }
     });
+
+    // Fetch only the communities we need
+    const communityIdsToFetch = Array.isArray(createdJudge.community_ids) ? createdJudge.community_ids : [];
+    const communityNames = communityIdsToFetch.length > 0
+      ? await prisma.community.findMany({
+          where: { community_id: { in: communityIdsToFetch } },
+          select: { community_id: true, name: true }
+        })
+      : [];
+
+    const communityNameMap = new Map(
+      communityNames.map((community: { community_id: number; name: string }) => [community.community_id, community.name])
+    );
 
     const names = Array.isArray(createdJudge.community_ids)
       ? createdJudge.community_ids

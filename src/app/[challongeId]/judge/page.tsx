@@ -62,7 +62,8 @@ export default function JudgePage() {
     } else {
       setJudgeId(storedJudgeId);
       if (storedJudgeId) {
-        fetchJudgeDetails(storedJudgeId);
+        // Fetch tournament and judge details in parallel instead of sequential
+        fetchInitialData(storedJudgeId);
       } else {
         setIsLoading(false);
       }
@@ -92,32 +93,44 @@ export default function JudgePage() {
     }
   }, [challongeId, router]);
 
-  // Fetch tournament data to get toId
-  useEffect(() => {
-    const fetchTournament = async () => {
-      try {
-        const response = await fetch(`/api/tournaments?showAll=true`);
-        const data = await response.json();
-        
-        if (data.success && data.tournaments) {
-          const tournament = data.tournaments.find((t: any) => t.challonge_id === challongeId);
-          if (tournament) {
-            setToId(tournament.to_id);
-          } else {
-            console.error('Tournament not found');
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching tournament:', err);
-      }
-    };
+  // Optimized: Fetch tournament and judge details in parallel
+  const fetchInitialData = useCallback(async (jId: string) => {
+    try {
+      // Use Promise.all to fetch in parallel instead of sequential
+      const [tournamentRes, judgeNameRes, stadiumRes] = await Promise.all([
+        fetch(`/api/tournaments?showAll=true`),
+        fetch(`/api/judge-name?judgeId=${jId}`),
+        fetch(`/api/judge-stadium?judgeId=${jId}&challongeId=${challongeId}`)
+      ]);
 
-    if (challongeId) {
-      fetchTournament();
+      const tournamentData = await tournamentRes.json();
+      const nameData = await judgeNameRes.json();
+      const stadiumData = await stadiumRes.json();
+
+      // Process tournament data
+      if (tournamentData.success && tournamentData.tournaments) {
+        const tournament = tournamentData.tournaments.find((t: any) => t.challonge_id === challongeId);
+        if (tournament) {
+          setToId(tournament.to_id);
+        }
+      }
+
+      // Process judge details
+      if (nameData?.success) {
+        setJudgeName(nameData.name);
+      }
+
+      if (stadiumData?.success) {
+        setStadiumNumber(stadiumData.stadiumNumber);
+      }
+    } catch (error) {
+      console.error('Error fetching initial data:', error);
+    } finally {
+      setIsLoading(false);
     }
   }, [challongeId]);
 
-  // Fetch user data (API key)
+  // Fetch user data once we have toId
   useEffect(() => {
     const fetchUserData = async () => {
       if (!toId) return;
@@ -229,30 +242,6 @@ export default function JudgePage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const fetchJudgeDetails = async (jId: string) => {
-    try {
-      // Fetch judge name
-      const nameResponse = await fetch(`/api/judge-name?judgeId=${jId}`);
-      const nameData = await nameResponse.json();
-      
-      if (nameData?.success) {
-        setJudgeName(nameData.name);
-      }
-
-      // Fetch stadium number
-      const stadiumResponse = await fetch(`/api/judge-stadium?judgeId=${jId}&challongeId=${challongeId}`);
-      const stadiumData = await stadiumResponse.json();
-      
-      if (stadiumData?.success) {
-        setStadiumNumber(stadiumData.stadiumNumber);
-      }
-    } catch (error) {
-      console.error('Error fetching judge details:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const upcomingPlayerIdSet = useMemo(() => {
     const set = new Set<number>();
