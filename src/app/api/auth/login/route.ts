@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import prisma from '@/lib/prisma';
 
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -17,34 +19,43 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // Test database connection first
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      console.log('Database connection successful');
-    } catch (dbError) {
-      console.error('Database connection failed:', dbError);
-      return NextResponse.json({
-        success: false,
-        error: 'Database connection failed'
-      }, { status: 500 });
-    }
-
     // Query user from database
     console.log('Executing query with username:', username);
 
-    const user = await prisma.user.findFirst({
-      where: {
-        username,
-        user_role: { in: ['admin', 'tournament_organizer'] }
-      },
-      select: {
-        user_id: true,
-        username: true,
-        password: true,
-        name: true,
-        user_role: true
-      }
-    });
+    let user;
+    try {
+      user = await prisma.user.findFirst({
+        where: {
+          username,
+          user_role: { in: ['admin', 'tournament_organizer'] }
+        },
+        select: {
+          user_id: true,
+          username: true,
+          password: true,
+          name: true,
+          user_role: true
+        }
+      });
+    } catch (dbError) {
+      console.error('Login database query failed:', dbError);
+      const hasDbEnv = Boolean(
+        process.env.DATABASE_URL ||
+        process.env.POSTGRES_PRISMA_URL ||
+        process.env.POSTGRES_URL ||
+        process.env.POSTGRES_URL_NON_POOLING
+      );
+
+      return NextResponse.json({
+        success: false,
+        error: 'Database connection failed',
+        details: {
+          message: dbError instanceof Error ? dbError.message : 'Unknown database error',
+          hasDatabaseEnv: hasDbEnv,
+          expectedEnv: ['DATABASE_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL'],
+        }
+      }, { status: 500 });
+    }
     console.log('Query returned', user ? 1 : 0, 'users');
 
     if (!user) {

@@ -23,9 +23,18 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('Database test error:', error);
+    const hasDbEnv = Boolean(
+      process.env.DATABASE_URL ||
+      process.env.POSTGRES_PRISMA_URL ||
+      process.env.POSTGRES_URL ||
+      process.env.POSTGRES_URL_NON_POOLING
+    );
+
     return NextResponse.json({
       success: false,
-      error: 'Database connection failed: ' + (error instanceof Error ? error.message : 'Unknown error')
+      error: 'Database connection failed: ' + (error instanceof Error ? error.message : 'Unknown error'),
+      hasDatabaseEnv: hasDbEnv,
+      expectedEnv: ['DATABASE_URL', 'POSTGRES_PRISMA_URL', 'POSTGRES_URL']
     }, { status: 500 });
   }
 }
