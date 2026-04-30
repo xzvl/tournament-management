@@ -3,6 +3,9 @@ const nextConfig = {
   // Compression and caching
   compress: true,
   poweredByHeader: false,
+
+  // Keep Prisma packages external so the query engine is resolved correctly on Vercel.
+  serverExternalPackages: ['@prisma/client', 'prisma'],
   
   // Image optimization
   images: {
@@ -31,7 +34,7 @@ const nextConfig = {
 
   // Enable experimental optimizations
   experimental: {
-    optimizePackageImports: ['react-dom', '@prisma/client'],
+    optimizePackageImports: ['react-dom'],
   },
 };
 
